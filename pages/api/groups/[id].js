@@ -27,5 +27,11 @@ export default async function handler(req, res) {
     .select("role, joined_at, users:users(id,steamid64,display_name,avatar_url)")
     .eq("group_id", groupId);
 
-  res.status(200).json({ group, members });
+  const { data: leaderboards } = await supabaseAdmin
+    .from("group_leaderboards")
+    .select("id, group_id, appid, title, created_by_user_id, created_at")
+    .eq("group_id", groupId)
+    .order("created_at", { ascending: false });
+
+  res.status(200).json({ group, members, leaderboards: leaderboards || [] });
 }

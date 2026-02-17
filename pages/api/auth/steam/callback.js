@@ -31,23 +31,34 @@ export default async function handler(req, res) {
     if (!steamid64) return res.status(400).send("Missing steamid");
 
     // Upsert user
-    const { data: existing } = await supabaseAdmin
-      .from("users")
-      .select("id,steamid64")
-      .eq("steamid64", steamid64)
-      .single();
+   // 1. Steam Profil laden
+const profileRes = await fetch(
+  `https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key=${process.env.STEAM_API_KEY}&steamids=${steamid64}`
+);
+const profileJson = await profileRes.json();
+const profile = profileJson?.response?.players?.[0];
 
-    let userId = existing?.id;
+const displayName = profile?.personaname || null;
+const avatarUrl = profile?.avatarfull || null;
 
-    if (!userId) {
-      const { data: created, error } = await supabaseAdmin
-        .from("users")
-        .insert({ steamid64 })
-        .select("id")
-        .single();
-      if (error) throw error;
-      userId = created.id;
-    }
+// 2. User upsert in Supabase
+const { data: user, error } = await supabaseAdmin
+  .from("users")
+  .upsert(
+    {
+      steamid64,
+      display_name: displayName,
+      avatar_url: avatarUrl,
+    },
+    { onConflict: "steamid64" }
+  )
+  .select("id")
+  .single();
+
+if (error) throw error;
+
+const userId = user.id;
+
 
     await createSessionForUser(res, userId);
 

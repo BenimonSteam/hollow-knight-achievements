@@ -5,8 +5,12 @@ export default function GroupPage() {
   const router = useRouter();
   const { id } = router.query;
 
+  const [me, setMe] = useState(null);
   const [group, setGroup] = useState(null);
   const [members, setMembers] = useState([]);
+  const [leaderboards, setLeaderboards] = useState([]);
+  const [ownerGames, setOwnerGames] = useState([]);
+  const [loadingOwnerGames, setLoadingOwnerGames] = useState(false);
   const [err, setErr] = useState("");
 
   const [appid, setAppid] = useState("");
@@ -14,58 +18,131 @@ export default function GroupPage() {
   const [loadingCompare, setLoadingCompare] = useState(false);
 
   useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch("/api/auth/me");
+        const j = await r.json();
+        if (r.ok) setMe(j.user || null);
+      } catch (e) {
+        setErr(String(e));
+      }
+    })();
+  }, []);
+
+  async function loadOwnerGames(ownerSteamid64, preferredAppid) {
+    if (!ownerSteamid64) {
+      setOwnerGames([]);
+      return;
+    }
+
+    setLoadingOwnerGames(true);
+    try {
+      const r = await fetch(`/api/steam/games?steamid=${encodeURIComponent(ownerSteamid64)}`);
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "Failed to load owner games");
+        setOwnerGames([]);
+        return;
+      }
+
+      const games = j.games || [];
+      setOwnerGames(games);
+
+      if (preferredAppid) {
+        const hasPreferred = games.some((g) => String(g.appid) === String(preferredAppid));
+        if (!hasPreferred) {
+          setAppid(games[0] ? String(games[0].appid) : "");
+        }
+      } else {
+        setAppid((prev) => prev || (games[0] ? String(games[0].appid) : ""));
+      }
+    } catch (e) {
+      setErr(String(e));
+      setOwnerGames([]);
+    } finally {
+      setLoadingOwnerGames(false);
+    }
+  }
+
+  async function refreshGroup() {
+    if (!id) return;
+
+    const r = await fetch(`/api/groups/${id}`);
+    const j = await r.json();
+
+    if (!r.ok) {
+      setErr(j.error || "Failed to load group");
+      return;
+    }
+
+    setGroup(j.group);
+    const nextMembers = j.members || [];
+    setMembers(nextMembers);
+    setLeaderboards(j.leaderboards || []);
+
+    const activeAppid = j.group?.active_appid ? String(j.group.active_appid) : "";
+    setAppid(activeAppid);
+
+    const ownerSteamid64 = nextMembers.find((m) => m.role === "owner")?.users?.steamid64;
+    await loadOwnerGames(ownerSteamid64, activeAppid);
+  }
+
+  useEffect(() => {
     if (!id) return;
 
     (async () => {
       setErr("");
-      const r = await fetch(`/api/groups/${id}`);
-      const j = await r.json();
-      if (!r.ok) {
-        setErr(j.error || "Failed to load group");
-        return;
-      }
-      setGroup(j.group);
-      setMembers(j.members || []);
-      setAppid(j.group?.active_appid ? String(j.group.active_appid) : "");
+      await refreshGroup();
     })();
   }, [id]);
-
-  const isOwner = useMemo(() => {
-    if (!group) return false;
-    // members enthält role + users; owner role steht im group_members
-    const meMember = members.find(m => m.role === "owner");
-    // Das ist nicht perfekt für "bin ich owner", aber für MVP ok,
-    // weil du beim Create Group als owner eingetragen wirst.
-    // Besser wäre: /api/auth/me + Abgleich user.id mit group.owner_user_id.
-    return !!meMember;
-  }, [group, members]);
 
   async function saveGame() {
     setErr("");
     if (!appid) return;
+
+    const selectedGame = ownerGames.find((g) => String(g.appid) === String(appid));
     const r = await fetch(`/api/groups/${id}/set-game`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ appid }),
+      body: JSON.stringify({ appid, title: selectedGame?.name || null }),
     });
+
     const j = await r.json();
     if (!r.ok) setErr(j.error || "Failed to save game");
-    else {
-      // refresh group
-      const rr = await fetch(`/api/groups/${id}`);
-      const jj = await rr.json();
-      if (rr.ok) setGroup(jj.group);
-    }
+    else await refreshGroup();
   }
 
-  async function loadCompare() {
+  async function deleteLeaderboard(appidToDelete) {
+    setErr("");
+    const r = await fetch(`/api/groups/${id}/set-game`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ appid: appidToDelete }),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      setErr(j.error || "Failed to delete leaderboard");
+      return;
+    }
+
+    if (String(appid) === String(appidToDelete)) {
+      setCompare(null);
+    }
+    await refreshGroup();
+  }
+
+  async function loadCompare(appidOverride) {
     setErr("");
     setCompare(null);
-    if (!appid) return;
+
+    const selectedAppid = appidOverride || appid;
+    if (!selectedAppid) return;
+
+    if (appidOverride) setAppid(String(appidOverride));
 
     setLoadingCompare(true);
     try {
-      const r = await fetch(`/api/groups/${id}/compare?appid=${encodeURIComponent(appid)}`);
+      const r = await fetch(`/api/groups/${id}/compare?appid=${encodeURIComponent(selectedAppid)}`);
       const j = await r.json();
       if (!r.ok) setErr(j.error || "Compare failed");
       else setCompare(j);
@@ -76,11 +153,21 @@ export default function GroupPage() {
     }
   }
 
-  if (!id) return <div style={{ padding: 40, fontFamily: "system-ui" }}>Loading…</div>;
+  const isOwner = !!me && !!group && String(me.id) === String(group.owner_user_id);
+
+  const ownerGamesByAppid = useMemo(() => {
+    const map = new Map();
+    for (const g of ownerGames) map.set(String(g.appid), g);
+    return map;
+  }, [ownerGames]);
+
+  if (!id) return <div style={{ padding: 40, fontFamily: "system-ui" }}>Loading...</div>;
 
   return (
     <div style={{ padding: 40, fontFamily: "system-ui", maxWidth: 1100, margin: "0 auto" }}>
-      <a href="/" style={{ display: "inline-block", marginBottom: 12 }}>← Home</a>
+      <a href="/" style={{ display: "inline-block", marginBottom: 12 }}>
+        {"<-"} Home
+      </a>
 
       <h1>{group ? group.name : "Group"}</h1>
 
@@ -92,7 +179,7 @@ export default function GroupPage() {
             <b>Invite Code:</b> {group.invite_code}
           </div>
           <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-            Tipp: Teile den Code. Andere gehen auf Home → “Join Group”.
+            Tipp: Teile den Code. Andere gehen auf Home und dann auf Join Group.
           </div>
         </div>
       )}
@@ -100,27 +187,51 @@ export default function GroupPage() {
       <h2 style={{ marginTop: 24 }}>Mitglieder</h2>
       <ul>
         {members.map((m) => (
-          <li key={m.users.steamid64}>
-            {m.users.display_name || m.users.steamid64}{" "}
-            <span style={{ opacity: 0.7 }}>({m.role})</span>
+          <li
+            key={m.users?.steamid64 || `${m.role}-${m.joined_at}`}
+            style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}
+          >
+            {m.users?.avatar_url && (
+              <img
+                src={m.users.avatar_url}
+                alt=""
+                width={32}
+                height={32}
+                style={{ borderRadius: "50%" }}
+              />
+            )}
+            <span>
+              {m.users?.display_name || m.users?.steamid64 || "Unbekannter User"}
+              {m.role ? ` (${m.role})` : ""}
+            </span>
           </li>
         ))}
       </ul>
 
-      <h2 style={{ marginTop: 24 }}>Spiel auswählen</h2>
+      <h2 style={{ marginTop: 24 }}>Spiel auswaehlen</h2>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <input
+        <select
           value={appid}
           onChange={(e) => setAppid(e.target.value)}
-          placeholder="AppID (z.B. 367520)"
-          style={{ padding: 10, minWidth: 240 }}
-        />
-        <button onClick={loadCompare} disabled={!appid || loadingCompare} style={{ padding: "10px 14px" }}>
+          disabled={loadingOwnerGames || ownerGames.length === 0}
+          style={{ padding: 10, minWidth: 280 }}
+        >
+          {ownerGames.length === 0 ? (
+            <option value="">{loadingOwnerGames ? "Lade Spiele..." : "Keine Spiele gefunden"}</option>
+          ) : null}
+          {ownerGames.map((g) => (
+            <option key={g.appid} value={String(g.appid)}>
+              {g.name} (AppID: {g.appid})
+            </option>
+          ))}
+        </select>
+
+        <button onClick={() => loadCompare()} disabled={!appid || loadingCompare} style={{ padding: "10px 14px" }}>
           {loadingCompare ? "Vergleiche..." : "Compare"}
         </button>
 
-        <button onClick={saveGame} disabled={!appid} style={{ padding: "10px 14px" }}>
-          Save as group game
+        <button onClick={saveGame} disabled={!appid || !isOwner} style={{ padding: "10px 14px" }}>
+          Rangliste anlegen
         </button>
       </div>
 
@@ -129,6 +240,77 @@ export default function GroupPage() {
           Aktives Gruppenspiel: <b>{group.active_appid}</b>
         </p>
       ) : null}
+
+      <h2 style={{ marginTop: 24 }}>Ranglisten in dieser Gruppe</h2>
+      {leaderboards.length === 0 ? (
+        <p style={{ opacity: 0.8 }}>Noch keine Ranglisten angelegt.</p>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {leaderboards.map((lb) => {
+            const game = ownerGamesByAppid.get(String(lb.appid));
+            return (
+              <li
+                key={lb.id || `${lb.group_id}-${lb.appid}`}
+                style={{
+                  marginBottom: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  border: "1px solid #ddd",
+                  borderRadius: 10,
+                  padding: 10,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  {game?.iconUrl ? (
+                    <img
+                      src={game.iconUrl}
+                      alt={lb.title || `App ${lb.appid}`}
+                      width={48}
+                      height={48}
+                      style={{ borderRadius: 8, objectFit: "cover" }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        width: 48,
+                        height: 48,
+                        borderRadius: 8,
+                        background: "#eee",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 10,
+                        color: "#666",
+                      }}
+                    >
+                      No Cover
+                    </div>
+                  )}
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{lb.title || `App ${lb.appid}`}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>AppID: {lb.appid}</div>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => loadCompare(String(lb.appid))} style={{ padding: "6px 10px" }}>
+                    Vergleichen
+                  </button>
+                  <button
+                    onClick={() => deleteLeaderboard(lb.appid)}
+                    disabled={!isOwner}
+                    style={{ padding: "6px 10px" }}
+                  >
+                    Loeschen
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
 
       {compare && (
         <div style={{ marginTop: 24 }}>
@@ -141,11 +323,9 @@ export default function GroupPage() {
                 <li key={m.steamid64}>
                   <b>{m.displayName}</b>{" "}
                   {m.ok ? (
-                    <span>
-                      — {m.unlockedCount}/{compare.total}
-                    </span>
+                    <span>- {m.unlockedCount}/{compare.total}</span>
                   ) : (
-                    <span style={{ color: "crimson" }}>— nicht verfügbar ({m.error})</span>
+                    <span style={{ color: "crimson" }}>- nicht verfuegbar ({m.error})</span>
                   )}
                 </li>
               ))}
@@ -153,7 +333,7 @@ export default function GroupPage() {
 
           <h2 style={{ marginTop: 24 }}>Achievements (Mini-Matrix Vorschau)</h2>
           <p style={{ fontSize: 12, opacity: 0.8 }}>
-            Unten sind nur die ersten 15 Achievements (MVP). Später machen wir Paging/Filter.
+            Unten sind nur die ersten 15 Achievements (MVP). Spaeter machen wir Paging/Filter.
           </p>
 
           <div style={{ overflowX: "auto", border: "1px solid #ddd", borderRadius: 12 }}>
@@ -186,7 +366,7 @@ export default function GroupPage() {
                       const ok = compare.matrix?.[a.apiName]?.[m.steamid64];
                       return (
                         <td key={m.steamid64} style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                          {ok ? "✅" : "—"}
+                          {ok ? "OK" : "-"}
                         </td>
                       );
                     })}

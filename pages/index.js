@@ -60,7 +60,7 @@ export default function Home() {
   }
 
   if (loadingMe) {
-    return <div style={{ padding: 40, fontFamily: "system-ui" }}>Loading…</div>;
+    return <div style={{ padding: 40, fontFamily: "system-ui" }}>Loading...</div>;
   }
 
   if (!me) {
@@ -69,7 +69,7 @@ export default function Home() {
         <h1>Steam Achievement Groups</h1>
         <p>Logge dich ein, um Gruppen zu erstellen oder beizutreten.</p>
         <a href="/api/auth/steam/start">
-          <button style={{ padding: "10px 14px" }}>Sign in with Steam</button>
+          <button style={{ padding: "10px 14px", marginTop: 10 }}>Sign in with Steam</button>
         </a>
       </div>
     );
@@ -96,7 +96,7 @@ export default function Home() {
             disabled={!groupName || busy}
             style={{ padding: "10px 14px" }}
           >
-            {busy ? "…" : "Create"}
+            {busy ? "..." : "Create"}
           </button>
         </div>
 
@@ -113,7 +113,7 @@ export default function Home() {
             disabled={!inviteCode || busy}
             style={{ padding: "10px 14px" }}
           >
-            {busy ? "…" : "Join"}
+            {busy ? "..." : "Join"}
           </button>
         </div>
       </div>
