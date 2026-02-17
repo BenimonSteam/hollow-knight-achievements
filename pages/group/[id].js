@@ -16,6 +16,7 @@ export default function GroupPage() {
   const [appid, setAppid] = useState("");
   const [compare, setCompare] = useState(null);
   const [loadingCompare, setLoadingCompare] = useState(false);
+  const [hoveredLeaderboardId, setHoveredLeaderboardId] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -251,15 +252,37 @@ export default function GroupPage() {
             return (
               <li
                 key={lb.id || `${lb.group_id}-${lb.appid}`}
+                onClick={() => loadCompare(String(lb.appid))}
+                onMouseEnter={() => setHoveredLeaderboardId(lb.id || `${lb.group_id}-${lb.appid}`)}
+                onMouseLeave={() => setHoveredLeaderboardId(null)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    loadCompare(String(lb.appid));
+                  }
+                }}
+                role="button"
+                tabIndex={0}
                 style={{
                   marginBottom: 10,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "space-between",
                   gap: 12,
-                  border: "1px solid #ddd",
+                  border: hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`) ? "1px solid #7aa6ff" : "1px solid #ddd",
                   borderRadius: 10,
                   padding: 10,
+                  cursor: "pointer",
+                  background:
+                    hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
+                      ? "linear-gradient(135deg, #f7fbff 0%, #eef5ff 100%)"
+                      : "#fff",
+                  boxShadow:
+                    hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
+                      ? "0 8px 20px rgba(30, 80, 180, 0.12)"
+                      : "0 1px 2px rgba(0, 0, 0, 0.04)",
+                  transform: hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`) ? "translateY(-1px)" : "translateY(0)",
+                  transition: "all 160ms ease",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -295,11 +318,11 @@ export default function GroupPage() {
                 </div>
 
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => loadCompare(String(lb.appid))} style={{ padding: "6px 10px" }}>
-                    Vergleichen
-                  </button>
                   <button
-                    onClick={() => deleteLeaderboard(lb.appid)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteLeaderboard(lb.appid);
+                    }}
                     disabled={!isOwner}
                     style={{ padding: "6px 10px" }}
                   >
