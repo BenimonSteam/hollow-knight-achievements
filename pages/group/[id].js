@@ -76,7 +76,9 @@ export default function GroupPage() {
   const [commentDraftByEventId, setCommentDraftByEventId] = useState({});
   const [commentErrorByEventId, setCommentErrorByEventId] = useState({});
   const [commentBusyByEventId, setCommentBusyByEventId] = useState({});
+  const [matrixPage, setMatrixPage] = useState(1);
   const gameDropdownRef = useRef(null);
+  const rankingSectionRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -522,6 +524,15 @@ export default function GroupPage() {
       await loadAchievementsForCustomSelection();
     })();
   }, [showCreateLeaderboardOptions, createLeaderboardMode, appid, ownerSteamid64]);
+
+  useEffect(() => {
+    setMatrixPage(1);
+  }, [compare?.appid, compare?.mode, compare?.total]);
+
+  useEffect(() => {
+    if (!compare || !rankingSectionRef.current) return;
+    rankingSectionRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [compare?.appid, compare?.mode, compare?.total]);
 
   if (!id) return <div style={{ padding: 40, fontFamily: "system-ui" }}>Loading...</div>;
 
@@ -1244,7 +1255,18 @@ export default function GroupPage() {
       </div>
 
       {compare && (
-        <div style={{ marginTop: 24 }}>
+        <div ref={rankingSectionRef} style={{ marginTop: 24 }}>
+          {(() => {
+            const matrixPageSize = 10;
+            const matrixTotal = Array.isArray(compare.achievements) ? compare.achievements.length : 0;
+            const matrixTotalPages = Math.max(1, Math.ceil(matrixTotal / matrixPageSize));
+            const matrixCurrentPage = Math.min(Math.max(matrixPage, 1), matrixTotalPages);
+            const matrixStart = (matrixCurrentPage - 1) * matrixPageSize;
+            const matrixAchievements = (compare.achievements || []).slice(matrixStart, matrixStart + matrixPageSize);
+            const matrixFrom = matrixTotal === 0 ? 0 : matrixStart + 1;
+            const matrixTo = matrixStart + matrixAchievements.length;
+            return (
+              <>
           <h2>Ranking</h2>
           <p style={{ fontSize: 13, opacity: 0.8 }}>
             Modus: <b>{compare.modeLabel || leaderboardModeLabel(compare.mode || "overall_progress")}</b>
@@ -1328,34 +1350,42 @@ export default function GroupPage() {
 
           <h2 style={{ marginTop: 24 }}>Achievements (Mini-Matrix Vorschau)</h2>
           <p style={{ fontSize: 12, opacity: 0.8 }}>
-            Unten sind nur die ersten 15 Achievements (MVP). Spaeter machen wir Paging/Filter.
+            Zeige {matrixFrom}-{matrixTo} von {matrixTotal} Achievements.
           </p>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <button
+              type="button"
+              onClick={() => setMatrixPage((prev) => Math.max(1, prev - 1))}
+              disabled={matrixCurrentPage <= 1}
+              style={{ padding: "6px 10px" }}
+            >
+              Zurueck
+            </button>
+            <span style={{ fontSize: 12, opacity: 0.9 }}>
+              Seite {matrixCurrentPage}/{matrixTotalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setMatrixPage((prev) => Math.min(matrixTotalPages, prev + 1))}
+              disabled={matrixCurrentPage >= matrixTotalPages}
+              style={{ padding: "6px 10px" }}
+            >
+              Weiter
+            </button>
+          </div>
 
           <div style={{ overflowX: "auto", border: "1px solid #ddd", borderRadius: 12 }}>
-            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 800 }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 560 }}>
               <thead>
                 <tr>
                   <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
                     Achievement
                   </th>
-                  {compare.members.map((m) => (
-                    <th key={m.steamid64} style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                      {memberUserIdBySteamid64.get(String(m.steamid64)) ? (
-                        <a
-                          href={`/user/${memberUserIdBySteamid64.get(String(m.steamid64))}`}
-                          style={{ color: "#9defff", textDecoration: "underline" }}
-                        >
-                          {m.displayName}
-                        </a>
-                      ) : (
-                        m.displayName
-                      )}
-                    </th>
-                  ))}
+                  <th style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>Erreicht von</th>
                 </tr>
               </thead>
               <tbody>
-                {compare.achievements.slice(0, 15).map((a) => (
+                {matrixAchievements.map((a) => (
                   <tr key={a.apiName}>
                     <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
                       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -1366,12 +1396,15 @@ export default function GroupPage() {
                         </div>
                       </div>
                     </td>
-                    {compare.members.map((m) => {
-                      const ok = compare.matrix?.[a.apiName]?.[m.steamid64];
-                      return (
-                        <td key={m.steamid64} style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                          {ok ? (
-                            m.avatarUrl ? (
+                    <td style={{ padding: 10, borderBottom: "1px solid #eee" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        {compare.members
+                          .filter((m) => compare.matrix?.[a.apiName]?.[m.steamid64])
+                          .map((m) => {
+                            const userHref = memberUserIdBySteamid64.get(String(m.steamid64))
+                              ? `/user/${memberUserIdBySteamid64.get(String(m.steamid64))}`
+                              : null;
+                            const icon = m.avatarUrl ? (
                               <img
                                 src={m.avatarUrl}
                                 alt={m.displayName}
@@ -1385,19 +1418,47 @@ export default function GroupPage() {
                                 }}
                               />
                             ) : (
-                              "OK"
-                            )
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                      );
-                    })}
+                              <span
+                                title={m.displayName}
+                                style={{
+                                  width: 22,
+                                  height: 22,
+                                  borderRadius: "50%",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 10,
+                                  color: "#e8f2ff",
+                                  background: "rgba(255, 255, 255, 0.12)",
+                                  border: "1px solid rgba(255, 255, 255, 0.2)",
+                                }}
+                              >
+                                {String(m.displayName || "?").slice(0, 1).toUpperCase()}
+                              </span>
+                            );
+                            return userHref ? (
+                              <a key={m.steamid64} href={userHref} style={{ display: "inline-flex" }}>
+                                {icon}
+                              </a>
+                            ) : (
+                              <span key={m.steamid64} style={{ display: "inline-flex" }}>
+                                {icon}
+                              </span>
+                            );
+                          })}
+                        {compare.members.some((m) => compare.matrix?.[a.apiName]?.[m.steamid64]) ? null : (
+                          <span style={{ opacity: 0.7 }}>-</span>
+                        )}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+              </>
+            );
+          })()}
         </div>
       )}
     </div>

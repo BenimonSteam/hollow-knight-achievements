@@ -148,40 +148,33 @@ export default function Home({ appUser, authChecked }) {
 
   return (
     <main style={wrapStyle}>
-      <section style={heroStyle}>
-        <h1 style={{ marginTop: 0, marginBottom: 10 }}>Vergleiche Achievements in deiner Gruppe</h1>
-        <p style={{ marginTop: 0, color: "#9cb3c9", maxWidth: 820 }}>
-          TrophyTracker hilft dir, mit deinem Team Fortschritt sichtbar zu machen: Ranglisten anlegen,
-          seltene Achievements tracken und live vergleichen.
-        </p>
-        {!me ? (
-          <a href="/api/auth/steam/start">
-            <button style={primaryButton}>Mit Steam starten</button>
-          </a>
-        ) : (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <a href={`/user/${me.id}`}>
-              <button style={ghostButton}>Zu meinem Profil</button>
+      <section style={{ ...heroStyle, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20 }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ marginTop: 0, marginBottom: 10 }}>Vergleiche Achievements in deiner Gruppe</h1>
+          <p style={{ marginTop: 0, color: "#9cb3c9", maxWidth: 820 }}>
+            TrophyTracker hilft dir, mit deinem Team Fortschritt sichtbar zu machen: Ranglisten anlegen,
+            seltene Achievements tracken und live vergleichen.
+          </p>
+          {!me ? (
+            <a href="/api/auth/steam/start">
+              <button style={primaryButton}>Mit Steam starten</button>
             </a>
-            <a href="#quick-actions">
-              <button style={primaryButton}>Direkt loslegen</button>
-            </a>
-          </div>
-        )}
-      </section>
-
-      <h2 style={sectionTitle}>So funktioniert's</h2>
-      <section style={cards3}>
-        <StepCard n="1" title="Einloggen" text="Melde dich mit Steam an, damit dein Profil und Spiele geladen werden." />
-        <StepCard n="2" title="Gruppe verbinden" text="Erstelle eine Gruppe oder tritt mit Invite-Code einer bestehenden Gruppe bei." />
-        <StepCard n="3" title="Rangliste starten" text="Waehle einen Modus und vergleiche euren Fortschritt in einer Matrix." />
-      </section>
-
-      <h2 style={sectionTitle}>Was du bekommst</h2>
-      <section style={cards3}>
-        <FeatureCard title="Gruppen-Hub" text="Alle Mitglieder, Invite-Code und Spielauswahl zentral in einer Seite." />
-        <FeatureCard title="Flexible Ranglisten" text="Overall, seltenste 10 oder Custom-Auswahl fuer gezielte Challenges." />
-        <FeatureCard title="Direkter Vergleich" text="Ranking + Achievement-Matrix zeigen sofort, wer bei welchen Zielen vorne liegt." />
+          ) : (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <a href={`/user/${me.id}`}>
+                <button style={ghostButton}>Zu meinem Profil</button>
+              </a>
+              <a href="#quick-actions">
+                <button style={primaryButton}>Direkt loslegen</button>
+              </a>
+            </div>
+          )}
+        </div>
+        <img
+          src="/trophytracker-logo.png"
+          alt="TrophyTracker Logo"
+          style={{ width: 140, height: 140, objectFit: "contain", flexShrink: 0 }}
+        />
       </section>
 
       <h2 id="quick-actions" style={sectionTitle}>Schnellstart</h2>
@@ -239,6 +232,20 @@ export default function Home({ appUser, authChecked }) {
       )}
 
       {msg ? <p style={{ color: "#ff9db0", marginTop: 12 }}>{msg}</p> : null}
+
+      <h2 style={sectionTitle}>So funktioniert's</h2>
+      <section style={cards3}>
+        <StepCard n="1" title="Einloggen" text="Melde dich mit Steam an, damit dein Profil und Spiele geladen werden." />
+        <StepCard n="2" title="Gruppe verbinden" text="Erstelle eine Gruppe oder tritt mit Invite-Code einer bestehenden Gruppe bei." />
+        <StepCard n="3" title="Rangliste starten" text="Waehle einen Modus und vergleiche euren Fortschritt in einer Matrix." />
+      </section>
+
+      <h2 style={sectionTitle}>Was du bekommst</h2>
+      <section style={cards3}>
+        <FeatureCard title="Gruppen-Hub" text="Alle Mitglieder, Invite-Code und Spielauswahl zentral in einer Seite." />
+        <FeatureCard title="Flexible Ranglisten" text="Overall, seltenste 10 oder Custom-Auswahl fuer gezielte Challenges." />
+        <FeatureCard title="Direkter Vergleich" text="Ranking + Achievement-Matrix zeigen sofort, wer bei welchen Zielen vorne liegt." />
+      </section>
 
       <p id="support" style={{ marginTop: 24, fontSize: 12, color: "#9cb3c9" }}>
         Support TrophyTracker: Bei Problemen sende dein Anliegen inkl. Group-ID und SteamID an den Admin.
