@@ -703,18 +703,21 @@ export default function GroupPage() {
                   alignItems: "center",
                   justifyContent: "space-between",
                   gap: 12,
-                  border: hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`) ? "1px solid #7aa6ff" : "1px solid #ddd",
+                  border:
+                    hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
+                      ? "1px solid rgba(0, 234, 255, 0.62)"
+                      : "1px solid rgba(255, 255, 255, 0.16)",
                   borderRadius: 10,
                   padding: 10,
                   cursor: "pointer",
                   background:
                     hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
-                      ? "linear-gradient(135deg, #f7fbff 0%, #eef5ff 100%)"
-                      : "#fff",
+                      ? "linear-gradient(135deg, rgba(0, 234, 255, 0.14) 0%, rgba(47, 255, 178, 0.09) 100%)"
+                      : "rgba(8, 18, 33, 0.72)",
                   boxShadow:
                     hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
-                      ? "0 8px 20px rgba(30, 80, 180, 0.12)"
-                      : "0 1px 2px rgba(0, 0, 0, 0.04)",
+                      ? "0 10px 22px rgba(0, 234, 255, 0.14)"
+                      : "0 2px 8px rgba(0, 0, 0, 0.26)",
                   transform: hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`) ? "translateY(-1px)" : "translateY(0)",
                   transition: "all 160ms ease",
                 }}
@@ -726,7 +729,12 @@ export default function GroupPage() {
                       alt={lb.title || `App ${lb.appid}`}
                       width={64}
                       height={96}
-                      style={{ borderRadius: 8, objectFit: "cover", background: "#f2f2f2" }}
+                      style={{
+                        borderRadius: 8,
+                        objectFit: "cover",
+                        background: "rgba(255, 255, 255, 0.08)",
+                        border: "1px solid rgba(255, 255, 255, 0.14)",
+                      }}
                     />
                   ) : (
                     <div
@@ -734,21 +742,22 @@ export default function GroupPage() {
                         width: 64,
                         height: 96,
                         borderRadius: 8,
-                        background: "#eee",
+                        background: "rgba(255, 255, 255, 0.08)",
+                        border: "1px solid rgba(255, 255, 255, 0.14)",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
                         fontSize: 10,
-                        color: "#666",
+                        color: "#9cb3c9",
                       }}
                     >
                       No Cover
                     </div>
                   )}
                   <div>
-                    <div style={{ fontWeight: 700 }}>{lb.title || `App ${lb.appid}`}</div>
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>AppID: {lb.appid}</div>
-                    <div style={{ fontSize: 12, opacity: 0.7 }}>
+                    <div style={{ fontWeight: 700, color: "#e8f2ff" }}>{lb.title || `App ${lb.appid}`}</div>
+                    <div style={{ fontSize: 12, color: "#9cb3c9" }}>AppID: {lb.appid}</div>
+                    <div style={{ fontSize: 12, color: "#9cb3c9" }}>
                       Typ: {leaderboardModeLabel(lb.mode || "overall_progress")}
                     </div>
                   </div>
@@ -761,7 +770,13 @@ export default function GroupPage() {
                       deleteLeaderboard(lb.appid);
                     }}
                     disabled={!isOwner}
-                    style={{ padding: "6px 10px" }}
+                    style={{
+                      padding: "6px 10px",
+                      color: "#ffd6b6",
+                      background: "rgba(255, 123, 0, 0.16)",
+                      border: "1px solid rgba(255, 123, 0, 0.45)",
+                      borderRadius: 8,
+                    }}
                   >
                     Loeschen
                   </button>
