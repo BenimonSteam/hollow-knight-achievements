@@ -1,5 +1,5 @@
 ﻿import { useRouter } from "next/router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const LEADERBOARD_MODE_OPTIONS = [
   {
@@ -32,6 +32,16 @@ function memberUserHref(memberUserId) {
   return `/user/${memberUserId}`;
 }
 
+function formatFeedTime(isoTimestamp) {
+  if (!isoTimestamp) return "";
+  const dt = new Date(isoTimestamp);
+  if (Number.isNaN(dt.getTime())) return "";
+  return dt.toLocaleString("de-DE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 export default function GroupPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -45,6 +55,8 @@ export default function GroupPage() {
   const [err, setErr] = useState("");
 
   const [appid, setAppid] = useState("");
+  const [gameSearch, setGameSearch] = useState("");
+  const [isGameDropdownOpen, setIsGameDropdownOpen] = useState(false);
   const [compare, setCompare] = useState(null);
   const [loadingCompare, setLoadingCompare] = useState(false);
   const [hoveredLeaderboardId, setHoveredLeaderboardId] = useState(null);
@@ -55,6 +67,16 @@ export default function GroupPage() {
   const [loadingAvailableAchievements, setLoadingAvailableAchievements] = useState(false);
   const [creatingLeaderboard, setCreatingLeaderboard] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
+  const [activityFeed, setActivityFeed] = useState([]);
+  const [loadingActivityFeed, setLoadingActivityFeed] = useState(false);
+  const [activityFeedError, setActivityFeedError] = useState("");
+  const [openCommentsByEventId, setOpenCommentsByEventId] = useState({});
+  const [loadingCommentsByEventId, setLoadingCommentsByEventId] = useState({});
+  const [commentsByEventId, setCommentsByEventId] = useState({});
+  const [commentDraftByEventId, setCommentDraftByEventId] = useState({});
+  const [commentErrorByEventId, setCommentErrorByEventId] = useState({});
+  const [commentBusyByEventId, setCommentBusyByEventId] = useState({});
+  const gameDropdownRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -71,6 +93,8 @@ export default function GroupPage() {
   async function loadOwnerGames(ownerSteamid64, preferredAppid) {
     if (!ownerSteamid64) {
       setOwnerGames([]);
+      setGameSearch("");
+      setIsGameDropdownOpen(false);
       return;
     }
 
@@ -81,11 +105,14 @@ export default function GroupPage() {
       if (!r.ok) {
         setErr(j.error || "Failed to load owner games");
         setOwnerGames([]);
+        setIsGameDropdownOpen(false);
         return;
       }
 
       const games = j.games || [];
       setOwnerGames(games);
+      setGameSearch("");
+      setIsGameDropdownOpen(false);
 
       if (preferredAppid) {
         const hasPreferred = games.some((g) => String(g.appid) === String(preferredAppid));
@@ -98,6 +125,7 @@ export default function GroupPage() {
     } catch (e) {
       setErr(String(e));
       setOwnerGames([]);
+      setIsGameDropdownOpen(false);
     } finally {
       setLoadingOwnerGames(false);
     }
@@ -123,7 +151,41 @@ export default function GroupPage() {
     setAppid(activeAppid);
 
     const ownerSteamid64 = nextMembers.find((m) => m.role === "owner")?.users?.steamid64;
-    await loadOwnerGames(ownerSteamid64, activeAppid);
+    await Promise.all([loadOwnerGames(ownerSteamid64, activeAppid), loadActivityFeed(activeAppid)]);
+  }
+
+  async function loadActivityFeed(appidOverride) {
+    if (!id) return;
+
+    const feedAppid = String(appidOverride || appid || "");
+    setLoadingActivityFeed(true);
+    setActivityFeedError("");
+    try {
+      const params = new URLSearchParams({ limit: "5" });
+      if (feedAppid) params.set("appid", feedAppid);
+      const r = await fetch(`/api/groups/${id}/activity?${params.toString()}`);
+      const j = await r.json();
+      if (!r.ok) {
+        setActivityFeed([]);
+        setActivityFeedError(j.error || "Feed konnte nicht geladen werden");
+        return;
+      }
+      const items = Array.isArray(j.items) ? j.items : [];
+      setActivityFeed(items);
+      setOpenCommentsByEventId((prev) => {
+        const next = {};
+        for (const item of items) {
+          if (!item?.eventId) continue;
+          if (prev[item.eventId]) next[item.eventId] = true;
+        }
+        return next;
+      });
+    } catch (e) {
+      setActivityFeed([]);
+      setActivityFeedError(String(e));
+    } finally {
+      setLoadingActivityFeed(false);
+    }
   }
 
   useEffect(() => {
@@ -134,6 +196,143 @@ export default function GroupPage() {
       await refreshGroup();
     })();
   }, [id]);
+
+  useEffect(() => {
+    if (!id || !appid) {
+      setActivityFeed([]);
+      return;
+    }
+    (async () => {
+      await loadActivityFeed(appid);
+    })();
+  }, [id, appid]);
+
+  async function loadCommentsForEvent(eventId) {
+    if (!id || !eventId) return;
+
+    setLoadingCommentsByEventId((prev) => ({ ...prev, [eventId]: true }));
+    setCommentErrorByEventId((prev) => ({ ...prev, [eventId]: "" }));
+
+    try {
+      const q = new URLSearchParams({ eventId });
+      const r = await fetch(`/api/groups/${id}/activity/comments?${q.toString()}`);
+      const j = await r.json();
+      if (!r.ok) {
+        setCommentErrorByEventId((prev) => ({ ...prev, [eventId]: j.error || "Kommentare konnten nicht geladen werden" }));
+        return;
+      }
+      setCommentsByEventId((prev) => ({ ...prev, [eventId]: Array.isArray(j.comments) ? j.comments : [] }));
+    } catch (e) {
+      setCommentErrorByEventId((prev) => ({ ...prev, [eventId]: String(e) }));
+    } finally {
+      setLoadingCommentsByEventId((prev) => ({ ...prev, [eventId]: false }));
+    }
+  }
+
+  async function toggleCommentsForEvent(eventId) {
+    if (!eventId) return;
+    const willOpen = !openCommentsByEventId[eventId];
+    setOpenCommentsByEventId((prev) => ({ ...prev, [eventId]: willOpen }));
+    if (!willOpen) return;
+    if (Array.isArray(commentsByEventId[eventId])) return;
+    await loadCommentsForEvent(eventId);
+  }
+
+  async function submitCommentForEvent(eventId) {
+    if (!id || !eventId) return;
+    const text = (commentDraftByEventId[eventId] || "").trim();
+    if (!text) return;
+
+    setCommentBusyByEventId((prev) => ({ ...prev, [eventId]: true }));
+    setCommentErrorByEventId((prev) => ({ ...prev, [eventId]: "" }));
+    try {
+      const r = await fetch(`/api/groups/${id}/activity/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, text }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setCommentErrorByEventId((prev) => ({ ...prev, [eventId]: j.error || "Kommentar konnte nicht gespeichert werden" }));
+        return;
+      }
+
+      setCommentDraftByEventId((prev) => ({ ...prev, [eventId]: "" }));
+      setCommentsByEventId((prev) => {
+        const existing = Array.isArray(prev[eventId]) ? prev[eventId] : [];
+        return { ...prev, [eventId]: [...existing, j.comment] };
+      });
+      setActivityFeed((prev) =>
+        prev.map((item) =>
+          item.eventId === eventId ? { ...item, commentCount: Number(item.commentCount || 0) + 1 } : item
+        )
+      );
+    } catch (e) {
+      setCommentErrorByEventId((prev) => ({ ...prev, [eventId]: String(e) }));
+    } finally {
+      setCommentBusyByEventId((prev) => ({ ...prev, [eventId]: false }));
+    }
+  }
+
+  async function deleteCommentForEvent(eventId, commentId) {
+    if (!id || !eventId || !commentId) return;
+
+    setCommentBusyByEventId((prev) => ({ ...prev, [eventId]: true }));
+    setCommentErrorByEventId((prev) => ({ ...prev, [eventId]: "" }));
+    try {
+      const r = await fetch(`/api/groups/${id}/activity/comments`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ commentId }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setCommentErrorByEventId((prev) => ({ ...prev, [eventId]: j.error || "Kommentar konnte nicht geloescht werden" }));
+        return;
+      }
+
+      setCommentsByEventId((prev) => {
+        const existing = Array.isArray(prev[eventId]) ? prev[eventId] : [];
+        return { ...prev, [eventId]: existing.filter((c) => String(c.id) !== String(j.deletedId)) };
+      });
+      setActivityFeed((prev) =>
+        prev.map((item) =>
+          item.eventId === eventId
+            ? { ...item, commentCount: Math.max(0, Number(item.commentCount || 0) - 1) }
+            : item
+        )
+      );
+    } catch (e) {
+      setCommentErrorByEventId((prev) => ({ ...prev, [eventId]: String(e) }));
+    } finally {
+      setCommentBusyByEventId((prev) => ({ ...prev, [eventId]: false }));
+    }
+  }
+
+  useEffect(() => {
+    if (!isGameDropdownOpen) return;
+
+    function onMouseDown(event) {
+      if (!gameDropdownRef.current) return;
+      if (!gameDropdownRef.current.contains(event.target)) {
+        setIsGameDropdownOpen(false);
+        setGameSearch("");
+      }
+    }
+
+    function onKeyDown(event) {
+      if (event.key !== "Escape") return;
+      setIsGameDropdownOpen(false);
+      setGameSearch("");
+    }
+
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [isGameDropdownOpen]);
 
   async function saveGame() {
     setErr("");
@@ -254,6 +453,16 @@ export default function GroupPage() {
     return map;
   }, [ownerGames]);
 
+  const filteredOwnerGames = useMemo(() => {
+    const query = gameSearch.trim().toLowerCase();
+    if (!query) return ownerGames;
+    return ownerGames.filter((g) => {
+      const name = String(g?.name || "").toLowerCase();
+      const appidText = String(g?.appid || "");
+      return name.includes(query) || appidText.includes(query);
+    });
+  }, [ownerGames, gameSearch]);
+
   const memberUserIdBySteamid64 = useMemo(() => {
     const map = new Map();
     for (const member of members) {
@@ -326,8 +535,18 @@ export default function GroupPage() {
 
       {err && <p style={{ color: "crimson" }}>{err}</p>}
 
+      <div
+        style={{
+          marginTop: 12,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+          gap: 16,
+          alignItems: "start",
+        }}
+      >
+        <div>
       {group && (
-        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, marginTop: 12 }}>
+        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, marginTop: 0, width: "100%", maxWidth: 500 }}>
           <div>
             <b>Invite Code:</b> {group.invite_code}
           </div>
@@ -387,25 +606,85 @@ export default function GroupPage() {
 
       <h2 style={{ marginTop: 24 }}>Spiel auswaehlen</h2>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <select
-          value={appid}
-          onChange={(e) => setAppid(e.target.value)}
-          disabled={loadingOwnerGames || ownerGames.length === 0}
-          style={{ padding: 10, minWidth: 280 }}
-        >
-          {ownerGames.length === 0 ? (
-            <option value="">{loadingOwnerGames ? "Lade Spiele..." : "Keine Spiele gefunden"}</option>
-          ) : null}
-          {ownerGames.map((g) => (
-            <option key={g.appid} value={String(g.appid)}>
-              {g.name} (AppID: {g.appid})
-            </option>
-          ))}
-        </select>
+        <div ref={gameDropdownRef} style={{ position: "relative", minWidth: 320 }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (loadingOwnerGames || ownerGames.length === 0) return;
+              setIsGameDropdownOpen((prev) => !prev);
+              setGameSearch("");
+            }}
+            disabled={loadingOwnerGames || ownerGames.length === 0}
+            style={{
+              padding: "10px 12px",
+              minWidth: 320,
+              textAlign: "left",
+              border: "1px solid #cfd6e1",
+              borderRadius: 8,
+              background: "#fff",
+            }}
+          >
+            {loadingOwnerGames
+              ? "Lade Spiele..."
+              : ownerGames.length === 0
+                ? "Keine Spiele gefunden"
+                : appid && ownerGamesByAppid.get(String(appid))
+                  ? `${ownerGamesByAppid.get(String(appid)).name} (AppID: ${ownerGamesByAppid.get(String(appid)).appid})`
+                  : "Spiel auswaehlen"}
+          </button>
 
-        <button onClick={() => loadCompare()} disabled={!appid || loadingCompare} style={{ padding: "10px 14px" }}>
-          {loadingCompare ? "Vergleiche..." : "Compare"}
-        </button>
+          {isGameDropdownOpen && ownerGames.length > 0 ? (
+            <div
+              style={{
+                position: "absolute",
+                top: "calc(100% + 6px)",
+                left: 0,
+                width: "100%",
+                zIndex: 60,
+                border: "1px solid #cfd6e1",
+                borderRadius: 8,
+                background: "#fff",
+                boxShadow: "0 10px 24px rgba(0, 0, 0, 0.15)",
+                padding: 8,
+              }}
+            >
+              <input
+                type="text"
+                value={gameSearch}
+                onChange={(e) => setGameSearch(e.target.value)}
+                placeholder="Spiel suchen (Name oder AppID)"
+                autoFocus
+                style={{ width: "100%", padding: 8, marginBottom: 8 }}
+              />
+              <div style={{ maxHeight: 260, overflowY: "auto", display: "grid", gap: 4 }}>
+                {filteredOwnerGames.length === 0 ? (
+                  <div style={{ padding: "8px 6px", color: "#666" }}>Keine Treffer fuer "{gameSearch}"</div>
+                ) : (
+                  filteredOwnerGames.map((g) => (
+                    <button
+                      key={g.appid}
+                      type="button"
+                      onClick={() => {
+                        setAppid(String(g.appid));
+                        setIsGameDropdownOpen(false);
+                        setGameSearch("");
+                      }}
+                      style={{
+                        padding: "8px 10px",
+                        textAlign: "left",
+                        border: "1px solid #edf1f6",
+                        borderRadius: 6,
+                        background: String(g.appid) === String(appid) ? "#edf7ff" : "#fff",
+                      }}
+                    >
+                      {g.name} (AppID: {g.appid})
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : null}
+        </div>
 
         <button
           onClick={() => {
@@ -670,122 +949,299 @@ export default function GroupPage() {
         </div>
       ) : null}
 
-      {group?.active_appid ? (
-        <p style={{ marginTop: 8, opacity: 0.8 }}>
-          Aktives Gruppenspiel: <b>{group.active_appid}</b>
-        </p>
-      ) : null}
-
-      <h2 style={{ marginTop: 24 }}>Ranglisten in dieser Gruppe</h2>
-      {leaderboards.length === 0 ? (
-        <p style={{ opacity: 0.8 }}>Noch keine Ranglisten angelegt.</p>
-      ) : (
-        <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-          {leaderboards.map((lb) => {
-            const game = ownerGamesByAppid.get(String(lb.appid));
-            return (
-              <li
-                key={lb.id || `${lb.group_id}-${lb.appid}`}
-                onClick={() => loadCompare(String(lb.appid))}
-                onMouseEnter={() => setHoveredLeaderboardId(lb.id || `${lb.group_id}-${lb.appid}`)}
-                onMouseLeave={() => setHoveredLeaderboardId(null)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    loadCompare(String(lb.appid));
-                  }
-                }}
-                role="button"
-                tabIndex={0}
-                style={{
-                  marginBottom: 10,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  border:
-                    hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
-                      ? "1px solid rgba(0, 234, 255, 0.62)"
-                      : "1px solid rgba(255, 255, 255, 0.16)",
-                  borderRadius: 10,
-                  padding: 10,
-                  cursor: "pointer",
-                  background:
-                    hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
-                      ? "linear-gradient(135deg, rgba(0, 234, 255, 0.14) 0%, rgba(47, 255, 178, 0.09) 100%)"
-                      : "rgba(8, 18, 33, 0.72)",
-                  boxShadow:
-                    hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
-                      ? "0 10px 22px rgba(0, 234, 255, 0.14)"
-                      : "0 2px 8px rgba(0, 0, 0, 0.26)",
-                  transform: hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`) ? "translateY(-1px)" : "translateY(0)",
-                  transition: "all 160ms ease",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  {game?.libraryCapsuleUrl || game?.iconUrl ? (
-                    <img
-                      src={game.libraryCapsuleUrl || game.iconUrl}
-                      alt={lb.title || `App ${lb.appid}`}
-                      width={64}
-                      height={96}
-                      style={{
-                        borderRadius: 8,
-                        objectFit: "cover",
-                        background: "rgba(255, 255, 255, 0.08)",
-                        border: "1px solid rgba(255, 255, 255, 0.14)",
-                      }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: 64,
-                        height: 96,
-                        borderRadius: 8,
-                        background: "rgba(255, 255, 255, 0.08)",
-                        border: "1px solid rgba(255, 255, 255, 0.14)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 10,
-                        color: "#9cb3c9",
-                      }}
-                    >
-                      No Cover
-                    </div>
-                  )}
-                  <div>
-                    <div style={{ fontWeight: 700, color: "#e8f2ff" }}>{lb.title || `App ${lb.appid}`}</div>
-                    <div style={{ fontSize: 12, color: "#9cb3c9" }}>AppID: {lb.appid}</div>
-                    <div style={{ fontSize: 12, color: "#9cb3c9" }}>
-                      Typ: {leaderboardModeLabel(lb.mode || "overall_progress")}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteLeaderboard(lb.appid);
+      <div style={{ marginTop: 24 }}>
+          <h2 style={{ marginTop: 0 }}>Ranglisten in dieser Gruppe</h2>
+          {leaderboards.length === 0 ? (
+            <p style={{ opacity: 0.8 }}>Noch keine Ranglisten angelegt.</p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+              {leaderboards.map((lb) => {
+                const game = ownerGamesByAppid.get(String(lb.appid));
+                const isActiveLeaderboard = String(lb.appid) === String(appid);
+                return (
+                  <li
+                    key={lb.id || `${lb.group_id}-${lb.appid}`}
+                    onClick={() => loadCompare(String(lb.appid))}
+                    onMouseEnter={() => setHoveredLeaderboardId(lb.id || `${lb.group_id}-${lb.appid}`)}
+                    onMouseLeave={() => setHoveredLeaderboardId(null)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        loadCompare(String(lb.appid));
+                      }
                     }}
-                    disabled={!isOwner}
+                    role="button"
+                    tabIndex={0}
                     style={{
-                      padding: "6px 10px",
-                      color: "#ffd6b6",
-                      background: "rgba(255, 123, 0, 0.16)",
-                      border: "1px solid rgba(255, 123, 0, 0.45)",
-                      borderRadius: 8,
+                      marginBottom: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      border:
+                        isActiveLeaderboard
+                          ? "1px solid rgba(47, 255, 178, 0.78)"
+                          : hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
+                          ? "1px solid rgba(0, 234, 255, 0.62)"
+                          : "1px solid rgba(255, 255, 255, 0.16)",
+                      borderRadius: 10,
+                      padding: 10,
+                      cursor: "pointer",
+                      background:
+                        isActiveLeaderboard
+                          ? "linear-gradient(135deg, rgba(47, 255, 178, 0.22) 0%, rgba(0, 234, 255, 0.14) 100%)"
+                          : hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
+                          ? "linear-gradient(135deg, rgba(0, 234, 255, 0.14) 0%, rgba(47, 255, 178, 0.09) 100%)"
+                          : "rgba(8, 18, 33, 0.72)",
+                      boxShadow:
+                        isActiveLeaderboard
+                          ? "0 12px 24px rgba(47, 255, 178, 0.2)"
+                          : hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
+                          ? "0 10px 22px rgba(0, 234, 255, 0.14)"
+                          : "0 2px 8px rgba(0, 0, 0, 0.26)",
+                      transform:
+                        hoveredLeaderboardId === (lb.id || `${lb.group_id}-${lb.appid}`)
+                          ? "translateY(-1px)"
+                          : "translateY(0)",
+                      transition: "all 160ms ease",
                     }}
                   >
-                    Loeschen
-                  </button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      {game?.libraryCapsuleUrl || game?.iconUrl ? (
+                        <img
+                          src={game.libraryCapsuleUrl || game.iconUrl}
+                          alt={lb.title || `App ${lb.appid}`}
+                          width={64}
+                          height={96}
+                          style={{
+                            borderRadius: 8,
+                            objectFit: "cover",
+                            background: "rgba(255, 255, 255, 0.08)",
+                            border: "1px solid rgba(255, 255, 255, 0.14)",
+                          }}
+                        />
+                      ) : (
+                        <div
+                          style={{
+                            width: 64,
+                            height: 96,
+                            borderRadius: 8,
+                            background: "rgba(255, 255, 255, 0.08)",
+                            border: "1px solid rgba(255, 255, 255, 0.14)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 10,
+                            color: "#9cb3c9",
+                          }}
+                        >
+                          No Cover
+                        </div>
+                      )}
+                      <div>
+                        <div style={{ fontWeight: 700, color: "#e8f2ff" }}>{lb.title || `App ${lb.appid}`}</div>
+                        <div style={{ fontSize: 12, color: "#9cb3c9" }}>AppID: {lb.appid}</div>
+                        <div style={{ fontSize: 12, color: "#9cb3c9" }}>
+                          Typ: {leaderboardModeLabel(lb.mode || "overall_progress")}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteLeaderboard(lb.appid);
+                        }}
+                        disabled={!isOwner}
+                        style={{
+                          padding: "6px 10px",
+                          color: "#ffd6b6",
+                          background: "rgba(255, 123, 0, 0.16)",
+                          border: "1px solid rgba(255, 123, 0, 0.45)",
+                          borderRadius: 8,
+                        }}
+                      >
+                        Loeschen
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        </div>
+
+        <aside style={{ maxWidth: 420, width: "100%", justifySelf: "end" }}>
+          <h2 style={{ marginTop: 0 }}>Gruppen-Feed</h2>
+          {activityFeedError ? <p style={{ color: "crimson" }}>{activityFeedError}</p> : null}
+          {loadingActivityFeed && activityFeed.length === 0 ? (
+            <p style={{ opacity: 0.8 }}>Lade Feed...</p>
+          ) : activityFeed.length === 0 ? (
+            <p style={{ opacity: 0.8 }}>Noch keine Achievement-Aktivitaet in den getrackten Spielen.</p>
+          ) : (
+            <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+              {activityFeed.map((item, index) => {
+                const eventId = item?.eventId || "";
+                const key =
+                  eventId ||
+                  `${item.user?.steamid64 || "user"}-${item.appid}-${item.achievementApiName || "achievement"}-${item.unlocktime || index}`;
+                const userHref = item?.user?.id ? `/user/${item.user.id}` : null;
+                const comments = eventId ? commentsByEventId[eventId] || [] : [];
+                const isCommentsOpen = eventId ? !!openCommentsByEventId[eventId] : false;
+                const isLoadingComments = eventId ? !!loadingCommentsByEventId[eventId] : false;
+                const isCommentBusy = eventId ? !!commentBusyByEventId[eventId] : false;
+                const commentError = eventId ? commentErrorByEventId[eventId] || "" : "";
+                const commentDraft = eventId ? commentDraftByEventId[eventId] || "" : "";
+                return (
+                  <li
+                    key={key}
+                    style={{
+                      border: "1px solid rgba(255, 255, 255, 0.15)",
+                      background: "rgba(8, 18, 33, 0.65)",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    {item?.achievementIcon ? (
+                      <img
+                        src={item.achievementIcon}
+                        alt={item.achievementName || "Achievement"}
+                        width={32}
+                        height={32}
+                        style={{ borderRadius: 6, background: "rgba(255, 255, 255, 0.08)" }}
+                      />
+                    ) : null}
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ color: "#e8f2ff" }}>
+                        {userHref ? (
+                          <a href={userHref} style={{ color: "#9defff", textDecoration: "underline", fontWeight: 700 }}>
+                            {item?.user?.displayName || item?.user?.steamid64 || "Unbekannter User"}
+                          </a>
+                        ) : (
+                          <b>{item?.user?.displayName || item?.user?.steamid64 || "Unbekannter User"}</b>
+                        )}{" "}
+                        hat <b>{item.achievementName || item.achievementApiName || "ein Achievement"}</b> in{" "}
+                        <b>{item.gameTitle || `App ${item.appid}`}</b> freigeschaltet.
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 12, color: "#9cb3c9" }}>{formatFeedTime(item.unlockedAt)}</div>
+                      {eventId ? (
+                        <div style={{ marginTop: 8 }}>
+                          <button
+                            type="button"
+                            onClick={() => toggleCommentsForEvent(eventId)}
+                            disabled={isCommentBusy}
+                            style={{
+                              padding: "4px 8px",
+                              borderRadius: 8,
+                              border: "1px solid rgba(157, 239, 255, 0.45)",
+                              background: "rgba(157, 239, 255, 0.08)",
+                              color: "#9defff",
+                              fontSize: 12,
+                            }}
+                          >
+                            {isCommentsOpen ? "Kommentare ausblenden" : "Kommentare anzeigen"} ({item.commentCount || 0})
+                          </button>
+
+                          {isCommentsOpen ? (
+                            <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                              {commentError ? <div style={{ color: "#ff9db0", fontSize: 12 }}>{commentError}</div> : null}
+                              {isLoadingComments ? (
+                                <div style={{ fontSize: 12, opacity: 0.8 }}>Lade Kommentare...</div>
+                              ) : comments.length === 0 ? (
+                                <div style={{ fontSize: 12, opacity: 0.8 }}>Noch keine Kommentare.</div>
+                              ) : (
+                                <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 6 }}>
+                                  {comments.map((comment) => (
+                                    <li
+                                      key={comment.id}
+                                      style={{
+                                        border: "1px solid rgba(255, 255, 255, 0.12)",
+                                        borderRadius: 8,
+                                        padding: "6px 8px",
+                                        background: "rgba(0, 0, 0, 0.18)",
+                                      }}
+                                    >
+                                      <div style={{ fontSize: 12, color: "#9cb3c9", display: "flex", justifyContent: "space-between", gap: 8 }}>
+                                        <span>{comment?.user?.displayName || "Unbekannter User"}</span>
+                                        <span>{formatFeedTime(comment.createdAt)}</span>
+                                      </div>
+                                      <div style={{ marginTop: 2, whiteSpace: "pre-wrap" }}>{comment.text}</div>
+                                      {String(comment?.user?.id || "") === String(me?.id || "") ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteCommentForEvent(eventId, comment.id)}
+                                          disabled={isCommentBusy}
+                                          style={{
+                                            marginTop: 4,
+                                            padding: "1px 5px",
+                                            borderRadius: 999,
+                                            border: "1px solid rgba(255, 214, 182, 0.22)",
+                                            background: "rgba(255, 214, 182, 0.04)",
+                                            color: "rgba(255, 214, 182, 0.72)",
+                                            fontSize: 10,
+                                            lineHeight: 1.3,
+                                          }}
+                                        >
+                                          Loeschen
+                                        </button>
+                                      ) : null}
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <input
+                                  type="text"
+                                  value={commentDraft}
+                                  onChange={(e) =>
+                                    setCommentDraftByEventId((prev) => ({ ...prev, [eventId]: e.target.value }))
+                                  }
+                                  placeholder="Kommentar schreiben..."
+                                  maxLength={500}
+                                  style={{
+                                    flex: 1,
+                                    minWidth: 0,
+                                    padding: "6px 8px",
+                                    borderRadius: 8,
+                                    border: "1px solid rgba(255, 255, 255, 0.22)",
+                                    background: "rgba(255, 255, 255, 0.04)",
+                                    color: "#e8f2ff",
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => submitCommentForEvent(eventId)}
+                                  disabled={isCommentBusy || !commentDraft.trim()}
+                                  style={{
+                                    padding: "6px 8px",
+                                    borderRadius: 8,
+                                    border: "1px solid rgba(0, 234, 255, 0.35)",
+                                    background: "rgba(0, 234, 255, 0.08)",
+                                    color: "#00eaff",
+                                  }}
+                                >
+                                  Senden
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </aside>
+      </div>
 
       {compare && (
         <div style={{ marginTop: 24 }}>
@@ -947,4 +1403,3 @@ export default function GroupPage() {
     </div>
   );
 }
-

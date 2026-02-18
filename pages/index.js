@@ -1,34 +1,114 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-export default function Home() {
-  const [me, setMe] = useState(null);
-  const [loadingMe, setLoadingMe] = useState(true);
+const wrapStyle = {
+  maxWidth: 1080,
+  margin: "0 auto",
+  padding: "24px 28px 40px",
+  color: "#e8f2ff",
+  fontFamily: "system-ui",
+};
 
+const heroStyle = {
+  border: "1px solid rgba(0, 234, 255, 0.28)",
+  borderRadius: 16,
+  background: "linear-gradient(160deg, rgba(16, 26, 45, 0.92), rgba(8, 13, 23, 0.9))",
+  boxShadow: "0 0 28px rgba(0, 234, 255, 0.12)",
+  padding: "24px 22px",
+};
+
+const sectionTitle = { marginTop: 28, marginBottom: 12 };
+
+const cards3 = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 12,
+};
+
+const cardStyle = {
+  border: "1px solid rgba(255, 255, 255, 0.14)",
+  borderRadius: 12,
+  background: "rgba(8, 18, 33, 0.72)",
+  padding: 14,
+};
+
+const actionCard = {
+  border: "1px solid rgba(0, 234, 255, 0.28)",
+  borderRadius: 12,
+  background: "rgba(16, 26, 45, 0.74)",
+  padding: 16,
+};
+
+const primaryButton = {
+  padding: "10px 14px",
+  color: "#04131d",
+  background: "linear-gradient(90deg, #00d9ff, #2fffb2)",
+  border: "1px solid transparent",
+  borderRadius: 10,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const ghostButton = {
+  padding: "10px 14px",
+  color: "#00eaff",
+  background: "rgba(0, 234, 255, 0.1)",
+  border: "1px solid rgba(0, 234, 255, 0.35)",
+  borderRadius: 10,
+  fontWeight: 700,
+  cursor: "pointer",
+};
+
+const inputStyle = {
+  display: "block",
+  width: "100%",
+  marginTop: 10,
+  marginBottom: 10,
+  padding: 10,
+  color: "#e8f2ff",
+  background: "rgba(7, 19, 33, 0.85)",
+  border: "1px solid rgba(0, 234, 255, 0.35)",
+  borderRadius: 10,
+};
+
+function StepCard({ n, title, text }) {
+  return (
+    <article style={cardStyle}>
+      <div style={{ fontSize: 12, color: "#9cb3c9", marginBottom: 6 }}>Schritt {n}</div>
+      <h3 style={{ marginTop: 0, marginBottom: 6 }}>{title}</h3>
+      <p style={{ margin: 0, color: "#9cb3c9" }}>{text}</p>
+    </article>
+  );
+}
+
+function FeatureCard({ title, text }) {
+  return (
+    <article style={cardStyle}>
+      <h3 style={{ marginTop: 0, marginBottom: 6 }}>{title}</h3>
+      <p style={{ margin: 0, color: "#9cb3c9" }}>{text}</p>
+    </article>
+  );
+}
+
+export default function Home({ appUser, authChecked }) {
+  const me = appUser || null;
   const [groupName, setGroupName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
   const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState(null);
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch("/api/auth/me");
-        const j = await r.json();
-        setMe(j.user || null);
-      } finally {
-        setLoadingMe(false);
-      }
-    })();
-  }, []);
+  const busy = busyAction !== null;
 
   async function createGroup() {
+    const name = groupName.trim();
+    if (!name || busy) return;
+
     setMsg("");
-    setBusy(true);
+    setBusyAction("create");
     try {
       const r = await fetch("/api/groups", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: groupName }),
+        body: JSON.stringify({ name }),
       });
       const j = await r.json();
       if (!r.ok) setMsg(j.error || "Error");
@@ -36,18 +116,21 @@ export default function Home() {
     } catch (e) {
       setMsg(String(e));
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
   async function joinGroup() {
+    const code = inviteCode.trim();
+    if (!code || busy) return;
+
     setMsg("");
-    setBusy(true);
+    setBusyAction("join");
     try {
       const r = await fetch("/api/groups/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ inviteCode }),
+        body: JSON.stringify({ inviteCode: code }),
       });
       const j = await r.json();
       if (!r.ok) setMsg(j.error || "Error");
@@ -55,244 +138,111 @@ export default function Home() {
     } catch (e) {
       setMsg(String(e));
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   }
 
-  async function logout() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST" });
-    } finally {
-      window.location.href = "/";
-    }
-  }
-
-  const profileName = me?.display_name || me?.steamid64 || "Profil";
-  const profileInitial = (profileName || "P").slice(0, 1).toUpperCase();
-
-  const pageBackgroundStyle = {
-    minHeight: "100dvh",
-    width: "100%",
-    position: "relative",
-    overflowX: "hidden",
-    margin: 0,
-    padding: 0,
-    color: "#e8f2ff",
-    background:
-      "radial-gradient(circle at 20% 10%, #16315f 0%, transparent 45%), radial-gradient(circle at 85% 15%, #4b1f49 0%, transparent 40%), linear-gradient(145deg, #05080f 0%, #0a1322 55%, #060b16 100%)",
-  };
-
-  const gridOverlayStyle = {
-    position: "fixed",
-    inset: 0,
-    pointerEvents: "none",
-    backgroundImage:
-      "linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px)",
-    backgroundSize: "36px 36px",
-  };
-
-  const contentStyle = {
-    position: "relative",
-    zIndex: 1,
-    padding: "92px 40px 40px",
-    fontFamily: "system-ui",
-    maxWidth: 900,
-    margin: "0 auto",
-  };
-
-  if (loadingMe) {
-    return (
-      <div style={pageBackgroundStyle}>
-        <div aria-hidden="true" style={gridOverlayStyle} />
-        <div style={contentStyle}>Loading...</div>
-      </div>
-    );
-  }
-
-  if (!me) {
-    return (
-      <div style={pageBackgroundStyle}>
-        <div aria-hidden="true" style={gridOverlayStyle} />
-        <div style={contentStyle}>
-          <header
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              right: 0,
-              zIndex: 3,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              borderBottom: "1px solid rgba(255,255,255,0.16)",
-              padding: "10px 22px",
-              background: "rgba(6, 12, 22, 0.86)",
-              backdropFilter: "blur(8px)",
-            }}
-          >
-            <a
-              href="/"
-              style={{ display: "inline-flex", alignItems: "center", gap: 10, color: "#e8f2ff", textDecoration: "none" }}
-            >
-              <img src="/trophytracker-logo.png" alt="TrophyTracker Logo" style={{ width: 24, height: 24 }} />
-              <strong style={{ letterSpacing: "0.04em", textTransform: "uppercase" }}>TrophyTracker</strong>
-            </a>
-          </header>
-          <h1>Steam Achievement Groups</h1>
-          <p>Logge dich ein, um Gruppen zu erstellen oder beizutreten.</p>
-          <a href="/api/auth/steam/start">
-            <button style={{ padding: "10px 14px", marginTop: 10 }}>Sign in with Steam</button>
-          </a>
-        </div>
-      </div>
-    );
+  if (!authChecked) {
+    return <div style={wrapStyle}>Loading...</div>;
   }
 
   return (
-    <div style={pageBackgroundStyle}>
-      <div aria-hidden="true" style={gridOverlayStyle} />
-      <div style={contentStyle}>
-        <header
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            zIndex: 3,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            borderBottom: "1px solid rgba(255,255,255,0.16)",
-            padding: "10px 22px",
-            background: "rgba(6, 12, 22, 0.86)",
-            backdropFilter: "blur(8px)",
-          }}
-        >
-          <a
-            href="/"
-            style={{ display: "inline-flex", alignItems: "center", gap: 10, color: "#e8f2ff", textDecoration: "none" }}
-          >
-            <img src="/trophytracker-logo.png" alt="TrophyTracker Logo" style={{ width: 24, height: 24 }} />
-            <strong style={{ letterSpacing: "0.04em", textTransform: "uppercase" }}>TrophyTracker</strong>
-          </a>
-
-          <nav style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-            <a
-              href="#support"
-              style={{
-                color: "#9defff",
-                textDecoration: "none",
-                border: "1px solid rgba(0, 234, 255, 0.32)",
-                borderRadius: 999,
-                padding: "7px 11px",
-                background: "rgba(0, 234, 255, 0.12)",
-                fontWeight: 700,
-              }}
-            >
-              Support TrophyTracker
-            </a>
-            <a
-              href={`/user/${me.id}`}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                color: "#e8f2ff",
-                textDecoration: "none",
-                border: "1px solid rgba(255,255,255,0.22)",
-                borderRadius: 999,
-                padding: "7px 11px",
-                background: "rgba(255,255,255,0.05)",
-                fontWeight: 700,
-              }}
-            >
-              <span
-                aria-hidden="true"
-                style={{
-                  width: 18,
-                  height: 18,
-                  borderRadius: "50%",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 11,
-                  background: "rgba(0, 234, 255, 0.18)",
-                  border: "1px solid rgba(0, 234, 255, 0.4)",
-                }}
-              >
-                {profileInitial}
-              </span>
-              <span>{profileName}</span>
-            </a>
-            <button
-              onClick={logout}
-              style={{
-                border: "1px solid rgba(255, 123, 0, 0.45)",
-                borderRadius: 999,
-                padding: "7px 11px",
-                background: "rgba(255, 123, 0, 0.2)",
-                color: "#ffd6b6",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              Logout
-            </button>
-          </nav>
-        </header>
-
-        <h1>Steam Achievement Groups</h1>
-        <p style={{ opacity: 0.8 }}>
-          Eingeloggt als: <b>{me.display_name || me.steamid64}</b>
+    <main style={wrapStyle}>
+      <section style={heroStyle}>
+        <h1 style={{ marginTop: 0, marginBottom: 10 }}>Vergleiche Achievements in deiner Gruppe</h1>
+        <p style={{ marginTop: 0, color: "#9cb3c9", maxWidth: 820 }}>
+          TrophyTracker hilft dir, mit deinem Team Fortschritt sichtbar zu machen: Ranglisten anlegen,
+          seltene Achievements tracken und live vergleichen.
         </p>
+        {!me ? (
+          <a href="/api/auth/steam/start">
+            <button style={primaryButton}>Mit Steam starten</button>
+          </a>
+        ) : (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <a href={`/user/${me.id}`}>
+              <button style={ghostButton}>Zu meinem Profil</button>
+            </a>
+            <a href="#quick-actions">
+              <button style={primaryButton}>Direkt loslegen</button>
+            </a>
+          </div>
+        )}
+      </section>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 16 }}>
-          <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
-            <h2 style={{ marginTop: 0 }}>Gruppe erstellen</h2>
+      <h2 style={sectionTitle}>So funktioniert's</h2>
+      <section style={cards3}>
+        <StepCard n="1" title="Einloggen" text="Melde dich mit Steam an, damit dein Profil und Spiele geladen werden." />
+        <StepCard n="2" title="Gruppe verbinden" text="Erstelle eine Gruppe oder tritt mit Invite-Code einer bestehenden Gruppe bei." />
+        <StepCard n="3" title="Rangliste starten" text="Waehle einen Modus und vergleiche euren Fortschritt in einer Matrix." />
+      </section>
+
+      <h2 style={sectionTitle}>Was du bekommst</h2>
+      <section style={cards3}>
+        <FeatureCard title="Gruppen-Hub" text="Alle Mitglieder, Invite-Code und Spielauswahl zentral in einer Seite." />
+        <FeatureCard title="Flexible Ranglisten" text="Overall, seltenste 10 oder Custom-Auswahl fuer gezielte Challenges." />
+        <FeatureCard title="Direkter Vergleich" text="Ranking + Achievement-Matrix zeigen sofort, wer bei welchen Zielen vorne liegt." />
+      </section>
+
+      <h2 id="quick-actions" style={sectionTitle}>Schnellstart</h2>
+      {!me ? (
+        <section style={actionCard}>
+          <p style={{ marginTop: 0, color: "#9cb3c9" }}>
+            Logge dich ein, um direkt Gruppen zu erstellen, Invite-Codes zu nutzen und Ranglisten zu sehen.
+          </p>
+          <a href="/api/auth/steam/start">
+            <button style={primaryButton}>Sign in with Steam</button>
+          </a>
+        </section>
+      ) : (
+        <section style={{ ...cards3, gridTemplateColumns: "1fr 1fr" }}>
+          <form
+            style={actionCard}
+            onSubmit={(e) => {
+              e.preventDefault();
+              createGroup();
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>Gruppe erstellen</h3>
+            <p style={{ margin: 0, color: "#9cb3c9" }}>Lege deine eigene Gruppe fuer Achievement-Tracking an.</p>
             <input
               placeholder="Gruppenname"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
-              style={{ padding: 10, width: "90%", marginBottom: 10 }}
+              style={inputStyle}
             />
-            <button
-              onClick={createGroup}
-              disabled={!groupName || busy}
-              style={{ padding: "10px 14px" }}
-            >
-              {busy ? "..." : "Create"}
+            <button type="submit" disabled={!groupName.trim() || busy} style={primaryButton}>
+              {busyAction === "create" ? "Erstelle..." : "Create"}
             </button>
-          </div>
+          </form>
 
-          <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16 }}>
-            <h2 style={{ marginTop: 0 }}>Gruppe beitreten</h2>
+          <form
+            style={actionCard}
+            onSubmit={(e) => {
+              e.preventDefault();
+              joinGroup();
+            }}
+          >
+            <h3 style={{ marginTop: 0 }}>Gruppe beitreten</h3>
+            <p style={{ margin: 0, color: "#9cb3c9" }}>Nutze einen Invite-Code und schliesse dich sofort an.</p>
             <input
               placeholder="Invite-Code"
               value={inviteCode}
               onChange={(e) => setInviteCode(e.target.value)}
-              style={{ padding: 10, width: "90%", marginBottom: 10 }}
+              style={inputStyle}
             />
-            <button
-              onClick={joinGroup}
-              disabled={!inviteCode || busy}
-              style={{ padding: "10px 14px" }}
-            >
-              {busy ? "..." : "Join"}
+            <button type="submit" disabled={!inviteCode.trim() || busy} style={ghostButton}>
+              {busyAction === "join" ? "Trete bei..." : "Join"}
             </button>
-          </div>
-        </div>
+          </form>
+        </section>
+      )}
 
-        {msg && <p style={{ color: "crimson", marginTop: 12 }}>{msg}</p>}
+      {msg ? <p style={{ color: "#ff9db0", marginTop: 12 }}>{msg}</p> : null}
 
-        <p style={{ marginTop: 20, fontSize: 12, opacity: 0.7 }}>
-          Tipp: Invite-Code bekommst du auf der Gruppenseite.
-        </p>
-        <p id="support" style={{ marginTop: 10, fontSize: 12, opacity: 0.85 }}>
-          Support TrophyTracker: Bei Problemen sende dein Anliegen inkl. Group-ID und SteamID an den Admin.
-        </p>
-      </div>
-    </div>
+      <p id="support" style={{ marginTop: 24, fontSize: 12, color: "#9cb3c9" }}>
+        Support TrophyTracker: Bei Problemen sende dein Anliegen inkl. Group-ID und SteamID an den Admin.
+      </p>
+    </main>
   );
 }

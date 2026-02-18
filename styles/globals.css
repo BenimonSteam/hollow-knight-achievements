@@ -87,8 +87,9 @@ a:visited {
 }
 
 .appBrandLogo {
-  width: 24px;
-  height: 24px;
+  width: 34px;
+  height: 34px;
+  object-fit: contain;
 }
 
 .appHeaderNav {
@@ -131,6 +132,14 @@ a:visited {
   border: 1px solid rgba(0, 234, 255, 0.4);
 }
 
+.appProfileAvatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(0, 234, 255, 0.45);
+}
+
 .appPowerButton {
   border: 1px solid rgba(255, 123, 0, 0.45);
   border-radius: 50%;
@@ -157,7 +166,7 @@ a:visited {
 .appContent {
   position: relative;
   z-index: 1;
-  padding-top: 84px;
+  padding-top: 92px;
 }
 
 @media (prefers-color-scheme: dark) {

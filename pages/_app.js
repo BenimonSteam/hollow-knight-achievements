@@ -32,6 +32,7 @@ export default function App({ Component, pageProps }) {
     () => profileName.slice(0, 1).toUpperCase(),
     [profileName]
   );
+  const profileAvatarUrl = me?.avatar_url || "";
 
   return (
     <div className="appShell">
@@ -51,9 +52,13 @@ export default function App({ Component, pageProps }) {
           {me ? (
             <>
               <a href={`/user/${me.id}`} className="appProfileLink">
-                <span className="appProfileIcon" aria-hidden="true">
-                  {profileInitial}
-                </span>
+                {profileAvatarUrl ? (
+                  <img src={profileAvatarUrl} alt="" className="appProfileAvatar" aria-hidden="true" />
+                ) : (
+                  <span className="appProfileIcon" aria-hidden="true">
+                    {profileInitial}
+                  </span>
+                )}
                 <span>{profileName}</span>
               </a>
               <button onClick={logout} aria-label="Logout" title="Logout" className="appPowerButton">
