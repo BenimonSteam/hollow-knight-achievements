@@ -21,6 +21,7 @@ export default async function handler(req, res) {
         appid: g.appid,
         name: g.name || `App ${g.appid}`,
         playtime_forever: g.playtime_forever || 0,
+        libraryCapsuleUrl: `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${g.appid}/library_600x900.jpg`,
         // Steam liefert Icon-Hash; daraus bauen wir eine URL
         iconUrl: g.img_icon_url
           ? `https://media.steampowered.com/steamcommunity/public/images/apps/${g.appid}/${g.img_icon_url}.jpg`

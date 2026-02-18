@@ -7,6 +7,30 @@ export default async function handler(req, res) {
 
   const groupId = req.query.id;
 
+  if (req.method === "DELETE") {
+    const { data: group, error: groupError } = await supabaseAdmin
+      .from("groups")
+      .select("id, owner_user_id")
+      .eq("id", groupId)
+      .single();
+
+    if (groupError || !group) return res.status(404).json({ error: "Group not found" });
+    if (String(group.owner_user_id) !== String(user.id)) {
+      return res.status(403).json({ error: "Only owner can delete group" });
+    }
+
+    const { error: deleteError } = await supabaseAdmin.from("groups").delete().eq("id", groupId);
+    if (deleteError) {
+      return res.status(500).json({ error: String(deleteError.message || deleteError) });
+    }
+
+    return res.status(200).json({ ok: true, deletedGroupId: groupId });
+  }
+
+  if (req.method !== "GET") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
   // check membership
   const { data: mem } = await supabaseAdmin
     .from("group_members")
@@ -29,7 +53,7 @@ export default async function handler(req, res) {
 
   const { data: leaderboards } = await supabaseAdmin
     .from("group_leaderboards")
-    .select("id, group_id, appid, title, created_by_user_id, created_at")
+    .select("id, group_id, appid, title, mode, tracked_achievement_api_names, created_by_user_id, created_at")
     .eq("group_id", groupId)
     .order("created_at", { ascending: false });
 

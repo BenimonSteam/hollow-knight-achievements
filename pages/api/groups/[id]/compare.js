@@ -1,6 +1,12 @@
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { requireUser } from "../../../../lib/auth";
 
+const MODE_LABELS = {
+  overall_progress: "Overall achievement progress",
+  rarest_10: "Die 10 seltensten Achievements",
+  custom: "Custom Auswahl",
+};
+
 async function fetchJson(url) {
   const r = await fetch(url);
   const j = await r.json();
@@ -35,11 +41,62 @@ export default async function handler(req, res) {
   const key = process.env.STEAM_API_KEY;
   if (!key) return res.status(500).json({ error: "Missing STEAM_API_KEY" });
 
+  const { data: leaderboardRow } = await supabaseAdmin
+    .from("group_leaderboards")
+    .select("mode, tracked_achievement_api_names")
+    .eq("group_id", groupId)
+    .eq("appid", appid)
+    .maybeSingle();
+
+  const mode = leaderboardRow?.mode || "overall_progress";
+
   // schema once
   const schemaUrl =
     `https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/?key=${encodeURIComponent(key)}&appid=${appid}&l=german`;
   const schema = await fetchJson(schemaUrl);
   const schemaAchievements = schema.j?.game?.availableGameStats?.achievements || [];
+  const schemaByApiName = new Map(schemaAchievements.map((a) => [a.name, a]));
+
+  let selectedAchievements = schemaAchievements;
+
+  if (mode === "rarest_10") {
+    const globalPercentagesUrl =
+      `https://api.steampowered.com/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/` +
+      `?gameid=${encodeURIComponent(appid)}&format=json`;
+    const globalPercentages = await fetchJson(globalPercentagesUrl);
+    const percentageRows = globalPercentages.j?.achievementpercentages?.achievements || [];
+    const percentageByApiName = new Map(
+      percentageRows
+        .map((row) => [row?.name, Number(row?.percent)])
+        .filter(([name, percent]) => !!name && Number.isFinite(percent))
+    );
+
+    selectedAchievements = [...schemaAchievements]
+      .sort((a, b) => {
+        const pa = percentageByApiName.has(a.name) ? percentageByApiName.get(a.name) : Number.POSITIVE_INFINITY;
+        const pb = percentageByApiName.has(b.name) ? percentageByApiName.get(b.name) : Number.POSITIVE_INFINITY;
+        if (pa !== pb) return pa - pb;
+        return String(a.displayName || a.name).localeCompare(String(b.displayName || b.name));
+      })
+      .slice(0, 10);
+  }
+
+  if (mode === "custom") {
+    const trackedAchievementApiNames = Array.isArray(leaderboardRow?.tracked_achievement_api_names)
+      ? leaderboardRow.tracked_achievement_api_names
+      : [];
+
+    if (trackedAchievementApiNames.length === 0) {
+      return res.status(400).json({ error: "Custom leaderboard has no tracked achievements" });
+    }
+
+    selectedAchievements = trackedAchievementApiNames
+      .map((apiName) => schemaByApiName.get(apiName))
+      .filter(Boolean);
+  }
+
+  const selectedApiNames = selectedAchievements.map((a) => a.name);
+  const selectedApiNameSet = new Set(selectedApiNames);
 
   // for each member, fetch their achievements
   const perUser = await Promise.all(
@@ -58,7 +115,7 @@ export default async function handler(req, res) {
         avatarUrl: m.avatar_url || "",
         ok: !!ps && !ps?.error,
         error: ps?.error || null,
-        unlockedCount: unlockedSet.size,
+        unlockedCount: selectedApiNames.filter((apiName) => unlockedSet.has(apiName)).length,
         unlockedSet: Array.from(unlockedSet),
       };
     })
@@ -66,19 +123,22 @@ export default async function handler(req, res) {
 
   // matrix: achievement -> steamid -> bool
   const matrix = {};
-  for (const ach of schemaAchievements) {
+  for (const ach of selectedAchievements) {
     const apiName = ach.name;
     matrix[apiName] = {};
     for (const u of perUser) {
       const set = new Set(u.unlockedSet);
-      matrix[apiName][u.steamid64] = set.has(apiName);
+      matrix[apiName][u.steamid64] = selectedApiNameSet.has(apiName) && set.has(apiName);
     }
   }
 
   res.status(200).json({
     appid,
-    total: schemaAchievements.length,
-    achievements: schemaAchievements.map(a => ({
+    mode,
+    modeLabel: MODE_LABELS[mode] || MODE_LABELS.overall_progress,
+    total: selectedAchievements.length,
+    totalInGame: schemaAchievements.length,
+    achievements: selectedAchievements.map(a => ({
       apiName: a.name,
       displayName: a.displayName,
       description: a.description || "",

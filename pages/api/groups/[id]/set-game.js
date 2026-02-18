@@ -1,6 +1,8 @@
 import { supabaseAdmin } from "../../../../lib/supabaseAdmin";
 import { requireUser } from "../../../../lib/auth";
 
+const LEADERBOARD_MODES = new Set(["overall_progress", "rarest_10", "custom"]);
+
 async function fetchOwnedAppIds(steamid64, key) {
   const url =
     `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/` +
@@ -12,6 +14,19 @@ async function fetchOwnedAppIds(steamid64, key) {
   const j = await r.json();
   const games = j?.response?.games || [];
   return new Set(games.map((g) => Number(g.appid)).filter((v) => Number.isFinite(v)));
+}
+
+async function fetchSchemaAchievementApiNames(appid, key) {
+  const url =
+    `https://api.steampowered.com/ISteamUserStats/GetSchemaForGame/v2/` +
+    `?key=${encodeURIComponent(key)}` +
+    `&appid=${encodeURIComponent(appid)}` +
+    `&l=german`;
+
+  const r = await fetch(url);
+  const j = await r.json();
+  const schemaAchievements = j?.game?.availableGameStats?.achievements || [];
+  return new Set(schemaAchievements.map((a) => a?.name).filter(Boolean));
 }
 
 export default async function handler(req, res) {
@@ -27,6 +42,15 @@ export default async function handler(req, res) {
   const n = Number(appid);
   if (!Number.isFinite(n)) return res.status(400).json({ error: "Invalid appid" });
   const title = typeof req.body?.title === "string" ? req.body.title.trim() : "";
+  const rawMode = typeof req.body?.mode === "string" ? req.body.mode.trim() : "";
+  const mode = LEADERBOARD_MODES.has(rawMode) ? rawMode : "overall_progress";
+
+  const rawTracked = Array.isArray(req.body?.trackedAchievementApiNames)
+    ? req.body.trackedAchievementApiNames
+    : [];
+  const trackedAchievementApiNames = Array.from(
+    new Set(rawTracked.map((v) => (typeof v === "string" ? v.trim() : "")).filter(Boolean))
+  );
 
   const { data: group } = await supabaseAdmin
     .from("groups")
@@ -79,6 +103,18 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Selected game is not owned by the group owner" });
   }
 
+  if (mode === "custom") {
+    if (trackedAchievementApiNames.length === 0) {
+      return res.status(400).json({ error: "Custom leaderboard requires tracked achievements" });
+    }
+
+    const validApiNames = await fetchSchemaAchievementApiNames(n, key);
+    const invalid = trackedAchievementApiNames.filter((apiName) => !validApiNames.has(apiName));
+    if (invalid.length > 0) {
+      return res.status(400).json({ error: "Custom selection contains invalid achievements" });
+    }
+  }
+
   const { data: leaderboard, error: leaderboardError } = await supabaseAdmin
     .from("group_leaderboards")
     .upsert(
@@ -86,11 +122,14 @@ export default async function handler(req, res) {
         group_id: groupId,
         appid: n,
         title: title || null,
+        mode,
+        tracked_achievement_api_names:
+          mode === "custom" ? trackedAchievementApiNames : [],
         created_by_user_id: user.id,
       },
       { onConflict: "group_id,appid" }
     )
-    .select("id, group_id, appid, title, created_by_user_id, created_at")
+    .select("id, group_id, appid, title, mode, tracked_achievement_api_names, created_by_user_id, created_at")
     .single();
 
   if (leaderboardError) {

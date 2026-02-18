@@ -1,5 +1,36 @@
-import { useRouter } from "next/router";
+﻿import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
+
+const LEADERBOARD_MODE_OPTIONS = [
+  {
+    value: "overall_progress",
+    label: "Overall achievement progress",
+    description:
+      "Klassisches Gesamt-Ranking ueber alle Achievements des gewaehlten Spiels. Ideal fuer langfristigen Fortschritt in der Gruppe.",
+  },
+  {
+    value: "rarest_10",
+    label: "Die 10 seltensten Achievements",
+    description:
+      "Vergleicht nur die 10 global seltensten Achievements des Spiels. Damit siehst du schneller, wer die schwierigsten Ziele schafft.",
+  },
+  {
+    value: "custom",
+    label: "Custom Auswahl",
+    description:
+      "Du waehlst selbst aus, welche Achievements fuer das Ranking gezaehlt werden. Gut fuer Challenges oder Themen-Ranglisten.",
+  },
+];
+
+function leaderboardModeLabel(mode) {
+  const match = LEADERBOARD_MODE_OPTIONS.find((o) => o.value === mode);
+  return match ? match.label : LEADERBOARD_MODE_OPTIONS[0].label;
+}
+
+function memberUserHref(memberUserId) {
+  if (!memberUserId) return null;
+  return `/user/${memberUserId}`;
+}
 
 export default function GroupPage() {
   const router = useRouter();
@@ -17,6 +48,13 @@ export default function GroupPage() {
   const [compare, setCompare] = useState(null);
   const [loadingCompare, setLoadingCompare] = useState(false);
   const [hoveredLeaderboardId, setHoveredLeaderboardId] = useState(null);
+  const [showCreateLeaderboardOptions, setShowCreateLeaderboardOptions] = useState(false);
+  const [createLeaderboardMode, setCreateLeaderboardMode] = useState("overall_progress");
+  const [availableAchievements, setAvailableAchievements] = useState([]);
+  const [selectedCustomAchievements, setSelectedCustomAchievements] = useState([]);
+  const [loadingAvailableAchievements, setLoadingAvailableAchievements] = useState(false);
+  const [creatingLeaderboard, setCreatingLeaderboard] = useState(false);
+  const [deletingGroup, setDeletingGroup] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -102,15 +140,40 @@ export default function GroupPage() {
     if (!appid) return;
 
     const selectedGame = ownerGames.find((g) => String(g.appid) === String(appid));
-    const r = await fetch(`/api/groups/${id}/set-game`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ appid, title: selectedGame?.name || null }),
-    });
+    if (createLeaderboardMode === "custom" && selectedCustomAchievements.length === 0) {
+      setErr("Bitte waehle mindestens ein Achievement fuer Custom aus.");
+      return;
+    }
 
-    const j = await r.json();
-    if (!r.ok) setErr(j.error || "Failed to save game");
-    else await refreshGroup();
+    setCreatingLeaderboard(true);
+    try {
+      const r = await fetch(`/api/groups/${id}/set-game`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appid,
+          title: selectedGame?.name || null,
+          mode: createLeaderboardMode,
+          trackedAchievementApiNames:
+            createLeaderboardMode === "custom" ? selectedCustomAchievements : [],
+        }),
+      });
+
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "Failed to save game");
+        return;
+      }
+
+      setShowCreateLeaderboardOptions(false);
+      setSelectedCustomAchievements([]);
+      setAvailableAchievements([]);
+      await refreshGroup();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setCreatingLeaderboard(false);
+    }
   }
 
   async function deleteLeaderboard(appidToDelete) {
@@ -154,13 +217,102 @@ export default function GroupPage() {
     }
   }
 
+  async function deleteGroup() {
+    if (!group?.id || deletingGroup) return;
+
+    const confirmed = window.confirm(
+      `Willst du die Gruppe "${group.name || group.id}" wirklich loeschen? Diese Aktion kann nicht rueckgaengig gemacht werden.`
+    );
+    if (!confirmed) return;
+
+    setErr("");
+    setDeletingGroup(true);
+    try {
+      const r = await fetch(`/api/groups/${group.id}`, { method: "DELETE" });
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "Failed to delete group");
+        return;
+      }
+      window.location.href = "/";
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setDeletingGroup(false);
+    }
+  }
+
   const isOwner = !!me && !!group && String(me.id) === String(group.owner_user_id);
+  const ownerSteamid64 = useMemo(
+    () => members.find((m) => m.role === "owner")?.users?.steamid64 || "",
+    [members]
+  );
 
   const ownerGamesByAppid = useMemo(() => {
     const map = new Map();
     for (const g of ownerGames) map.set(String(g.appid), g);
     return map;
   }, [ownerGames]);
+
+  const memberUserIdBySteamid64 = useMemo(() => {
+    const map = new Map();
+    for (const member of members) {
+      if (!member?.users?.steamid64 || !member?.users?.id) continue;
+      map.set(String(member.users.steamid64), String(member.users.id));
+    }
+    return map;
+  }, [members]);
+
+  async function loadAchievementsForCustomSelection() {
+    if (!appid || !ownerSteamid64) return;
+
+    setLoadingAvailableAchievements(true);
+    try {
+      const r = await fetch(
+        `/api/steam/achievements?steamid=${encodeURIComponent(ownerSteamid64)}&appid=${encodeURIComponent(appid)}`
+      );
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "Failed to load achievements");
+        setAvailableAchievements([]);
+        return;
+      }
+
+      const achievements = (j.achievements || []).map((a) => ({
+        apiName: a.apiName,
+        displayName: a.displayName || a.apiName,
+        description: a.description || "",
+        icon: a.icon || a.icongray || "",
+        globalPercent: typeof a.globalPercent === "number" ? a.globalPercent : null,
+        rarityLabel: a.rarityLabel || "Unbekannt",
+      }));
+      achievements.sort((a, b) => {
+        const pa = typeof a.globalPercent === "number" ? a.globalPercent : Number.POSITIVE_INFINITY;
+        const pb = typeof b.globalPercent === "number" ? b.globalPercent : Number.POSITIVE_INFINITY;
+        if (pa !== pb) return pa - pb;
+        return String(a.displayName).localeCompare(String(b.displayName));
+      });
+      setAvailableAchievements(achievements);
+      setSelectedCustomAchievements((prev) =>
+        prev.filter((apiName) => achievements.some((a) => a.apiName === apiName))
+      );
+    } catch (e) {
+      setErr(String(e));
+      setAvailableAchievements([]);
+    } finally {
+      setLoadingAvailableAchievements(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!showCreateLeaderboardOptions) return;
+    if (createLeaderboardMode !== "custom") return;
+    if (!appid || !ownerSteamid64) return;
+
+    (async () => {
+      await loadAchievementsForCustomSelection();
+    })();
+  }, [showCreateLeaderboardOptions, createLeaderboardMode, appid, ownerSteamid64]);
 
   if (!id) return <div style={{ padding: 40, fontFamily: "system-ui" }}>Loading...</div>;
 
@@ -182,6 +334,24 @@ export default function GroupPage() {
           <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
             Tipp: Teile den Code. Andere gehen auf Home und dann auf Join Group.
           </div>
+          {isOwner ? (
+            <div style={{ marginTop: 12 }}>
+              <button
+                onClick={deleteGroup}
+                disabled={deletingGroup}
+                style={{
+                  padding: "8px 12px",
+                  border: "1px solid #c82b2b",
+                  background: deletingGroup ? "#f8dede" : "#fff0f0",
+                  color: "#8a1212",
+                  borderRadius: 8,
+                  cursor: deletingGroup ? "not-allowed" : "pointer",
+                }}
+              >
+                {deletingGroup ? "Loesche Gruppe..." : "Gruppe loeschen"}
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -202,7 +372,13 @@ export default function GroupPage() {
               />
             )}
             <span>
-              {m.users?.display_name || m.users?.steamid64 || "Unbekannter User"}
+              {memberUserHref(m.users?.id) ? (
+                <a href={memberUserHref(m.users?.id)} style={{ color: "#9defff", textDecoration: "underline" }}>
+                  {m.users?.display_name || m.users?.steamid64 || "Unbekannter User"}
+                </a>
+              ) : (
+                <>{m.users?.display_name || m.users?.steamid64 || "Unbekannter User"}</>
+              )}
               {m.role ? ` (${m.role})` : ""}
             </span>
           </li>
@@ -231,10 +407,268 @@ export default function GroupPage() {
           {loadingCompare ? "Vergleiche..." : "Compare"}
         </button>
 
-        <button onClick={saveGame} disabled={!appid || !isOwner} style={{ padding: "10px 14px" }}>
+        <button
+          onClick={() => {
+            setErr("");
+            setShowCreateLeaderboardOptions(true);
+          }}
+          disabled={!appid || !isOwner}
+          style={{ padding: "10px 14px" }}
+        >
           Rangliste anlegen
         </button>
       </div>
+
+      {showCreateLeaderboardOptions ? (
+        <div
+          onClick={() => {
+            if (creatingLeaderboard) return;
+            setShowCreateLeaderboardOptions(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(4, 10, 20, 0.74)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: 16,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(860px, 100%)",
+              maxHeight: "90vh",
+              overflowY: "auto",
+              color: "#e8f2ff",
+              background:
+                "linear-gradient(160deg, rgba(16, 26, 45, 0.95), rgba(8, 13, 23, 0.95))",
+              borderRadius: 14,
+              border: "1px solid rgba(0, 234, 255, 0.3)",
+              boxShadow: "0 18px 40px rgba(0, 0, 0, 0.4)",
+              padding: 16,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>Ranglisten-Typ auswaehlen</div>
+                <p style={{ margin: "6px 0 0", opacity: 0.8 }}>
+                  Waehle den Modus, bevor du die Rangliste fuer das aktuelle Spiel anlegst.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowCreateLeaderboardOptions(false)}
+                disabled={creatingLeaderboard}
+                style={{
+                  padding: "8px 12px",
+                  color: "#00eaff",
+                  background: "rgba(0, 234, 255, 0.08)",
+                  border: "1px solid rgba(0, 234, 255, 0.35)",
+                  borderRadius: 10,
+                }}
+              >
+                Schliessen
+              </button>
+            </div>
+
+            <div style={{ display: "grid", gap: 10, marginTop: 14 }}>
+              {LEADERBOARD_MODE_OPTIONS.map((option) => {
+                const selected = createLeaderboardMode === option.value;
+                return (
+                  <label
+                    key={option.value}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "24px 1fr",
+                      alignItems: "start",
+                      gap: 10,
+                      border: selected
+                        ? "1px solid rgba(0, 234, 255, 0.65)"
+                        : "1px solid rgba(255, 255, 255, 0.18)",
+                      borderRadius: 10,
+                      padding: 12,
+                      background: selected
+                        ? "linear-gradient(135deg, rgba(0, 234, 255, 0.14) 0%, rgba(47, 255, 178, 0.08) 100%)"
+                        : "rgba(255, 255, 255, 0.02)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="leaderboard-type"
+                      value={option.value}
+                      checked={selected}
+                      onChange={() => {
+                        setCreateLeaderboardMode(option.value);
+                        setErr("");
+                        if (option.value !== "custom") {
+                          setSelectedCustomAchievements([]);
+                        }
+                      }}
+                      style={{ marginTop: 4 }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 700 }}>{option.label}</div>
+                      <div style={{ marginTop: 4, fontSize: 14, lineHeight: 1.45, color: "#9cb3c9" }}>
+                        {option.description}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            {createLeaderboardMode === "custom" ? (
+              <div
+                style={{
+                  marginTop: 14,
+                  borderTop: "1px solid rgba(255, 255, 255, 0.14)",
+                  paddingTop: 12,
+                }}
+              >
+                <div style={{ marginBottom: 8, fontWeight: 600 }}>
+                  Achievements fuer Tracking ({selectedCustomAchievements.length} ausgewaehlt)
+                </div>
+                {loadingAvailableAchievements ? (
+                  <p style={{ margin: 0, opacity: 0.8 }}>Lade Achievements...</p>
+                ) : availableAchievements.length === 0 ? (
+                  <p style={{ margin: 0, opacity: 0.8 }}>Keine Achievements gefunden.</p>
+                ) : (
+                  <div
+                    style={{
+                      maxHeight: 240,
+                      overflowY: "auto",
+                      border: "1px solid rgba(255, 255, 255, 0.14)",
+                      borderRadius: 8,
+                      padding: 8,
+                      display: "grid",
+                      gap: 6,
+                      background: "rgba(255, 255, 255, 0.02)",
+                    }}
+                  >
+                    {availableAchievements.map((achievement) => {
+                      const checked = selectedCustomAchievements.includes(achievement.apiName);
+                      return (
+                        <label
+                          key={achievement.apiName}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "24px 42px 1fr",
+                            gap: 8,
+                            alignItems: "start",
+                            border: "1px solid rgba(255, 255, 255, 0.12)",
+                            borderRadius: 8,
+                            padding: 8,
+                            background: "rgba(0, 0, 0, 0.18)",
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedCustomAchievements((prev) => [...prev, achievement.apiName]);
+                                return;
+                              }
+                              setSelectedCustomAchievements((prev) =>
+                                prev.filter((apiName) => apiName !== achievement.apiName)
+                              );
+                            }}
+                            style={{ marginTop: 12 }}
+                          />
+                          {achievement.icon ? (
+                            <img
+                              src={achievement.icon}
+                              alt={achievement.displayName}
+                              width={40}
+                              height={40}
+                              style={{
+                                borderRadius: 6,
+                                objectFit: "cover",
+                                background: "rgba(255, 255, 255, 0.06)",
+                              }}
+                            />
+                          ) : (
+                            <div
+                              style={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: 6,
+                                background: "rgba(255, 255, 255, 0.08)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 10,
+                                color: "#9cb3c9",
+                              }}
+                            >
+                              N/A
+                            </div>
+                          )}
+                          <div>
+                            <div style={{ fontWeight: 700 }}>{achievement.displayName}</div>
+                            <div style={{ fontSize: 12, color: "#9cb3c9" }}>
+                              {achievement.description || "Keine Beschreibung verfuegbar."}
+                            </div>
+                            <div style={{ marginTop: 2, fontSize: 12, color: "#9cb3c9" }}>
+                              Seltenheit:{" "}
+                              <b>
+                                {achievement.rarityLabel}
+                                {typeof achievement.globalPercent === "number"
+                                  ? ` (${achievement.globalPercent.toFixed(2)}%)`
+                                  : ""}
+                              </b>
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button
+                onClick={saveGame}
+                disabled={
+                  creatingLeaderboard ||
+                  !appid ||
+                  (createLeaderboardMode === "custom" && selectedCustomAchievements.length === 0)
+                }
+                style={{
+                  padding: "10px 14px",
+                  color: "#04131d",
+                  background: "linear-gradient(90deg, #00d9ff, #2fffb2)",
+                  border: "1px solid transparent",
+                  borderRadius: 10,
+                  fontWeight: 700,
+                }}
+              >
+                {creatingLeaderboard ? "Erstelle..." : "Rangliste erstellen"}
+              </button>
+              <button
+                onClick={() => setShowCreateLeaderboardOptions(false)}
+                disabled={creatingLeaderboard}
+                style={{
+                  padding: "10px 14px",
+                  color: "#00eaff",
+                  background: "rgba(0, 234, 255, 0.08)",
+                  border: "1px solid rgba(0, 234, 255, 0.35)",
+                  borderRadius: 10,
+                  fontWeight: 700,
+                }}
+              >
+                Abbrechen
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {group?.active_appid ? (
         <p style={{ marginTop: 8, opacity: 0.8 }}>
@@ -286,19 +720,19 @@ export default function GroupPage() {
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  {game?.iconUrl ? (
+                  {game?.libraryCapsuleUrl || game?.iconUrl ? (
                     <img
-                      src={game.iconUrl}
+                      src={game.libraryCapsuleUrl || game.iconUrl}
                       alt={lb.title || `App ${lb.appid}`}
-                      width={48}
-                      height={48}
-                      style={{ borderRadius: 8, objectFit: "cover" }}
+                      width={64}
+                      height={96}
+                      style={{ borderRadius: 8, objectFit: "cover", background: "#f2f2f2" }}
                     />
                   ) : (
                     <div
                       style={{
-                        width: 48,
-                        height: 48,
+                        width: 64,
+                        height: 96,
                         borderRadius: 8,
                         background: "#eee",
                         display: "flex",
@@ -314,6 +748,9 @@ export default function GroupPage() {
                   <div>
                     <div style={{ fontWeight: 700 }}>{lb.title || `App ${lb.appid}`}</div>
                     <div style={{ fontSize: 12, opacity: 0.7 }}>AppID: {lb.appid}</div>
+                    <div style={{ fontSize: 12, opacity: 0.7 }}>
+                      Typ: {leaderboardModeLabel(lb.mode || "overall_progress")}
+                    </div>
                   </div>
                 </div>
 
@@ -338,13 +775,28 @@ export default function GroupPage() {
       {compare && (
         <div style={{ marginTop: 24 }}>
           <h2>Ranking</h2>
+          <p style={{ fontSize: 13, opacity: 0.8 }}>
+            Modus: <b>{compare.modeLabel || leaderboardModeLabel(compare.mode || "overall_progress")}</b>
+            {typeof compare.totalInGame === "number" ? ` (${compare.total}/${compare.totalInGame} Achievements im Fokus)` : null}
+          </p>
           <ol>
             {compare.members
               .slice()
               .sort((a, b) => (b.unlockedCount || 0) - (a.unlockedCount || 0))
               .map((m) => (
                 <li key={m.steamid64}>
-                  <b>{m.displayName}</b>{" "}
+                  <b>
+                    {memberUserIdBySteamid64.get(String(m.steamid64)) ? (
+                      <a
+                        href={`/user/${memberUserIdBySteamid64.get(String(m.steamid64))}`}
+                        style={{ color: "#9defff", textDecoration: "underline" }}
+                      >
+                        {m.displayName}
+                      </a>
+                    ) : (
+                      m.displayName
+                    )}
+                  </b>{" "}
                   {m.ok ? (
                     <span>- {m.unlockedCount}/{compare.total}</span>
                   ) : (
@@ -368,7 +820,16 @@ export default function GroupPage() {
                   </th>
                   {compare.members.map((m) => (
                     <th key={m.steamid64} style={{ textAlign: "left", padding: 10, borderBottom: "1px solid #ddd" }}>
-                      {m.displayName}
+                      {memberUserIdBySteamid64.get(String(m.steamid64)) ? (
+                        <a
+                          href={`/user/${memberUserIdBySteamid64.get(String(m.steamid64))}`}
+                          style={{ color: "#9defff", textDecoration: "underline" }}
+                        >
+                          {m.displayName}
+                        </a>
+                      ) : (
+                        m.displayName
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -403,3 +864,4 @@ export default function GroupPage() {
     </div>
   );
 }
+
