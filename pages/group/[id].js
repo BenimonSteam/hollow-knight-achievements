@@ -794,31 +794,80 @@ export default function GroupPage() {
             Modus: <b>{compare.modeLabel || leaderboardModeLabel(compare.mode || "overall_progress")}</b>
             {typeof compare.totalInGame === "number" ? ` (${compare.total}/${compare.totalInGame} Achievements im Fokus)` : null}
           </p>
-          <ol>
+          <ol style={{ listStyle: "none", padding: 0, marginTop: 12, display: "grid", gap: 8 }}>
             {compare.members
               .slice()
               .sort((a, b) => (b.unlockedCount || 0) - (a.unlockedCount || 0))
-              .map((m) => (
-                <li key={m.steamid64}>
-                  <b>
-                    {memberUserIdBySteamid64.get(String(m.steamid64)) ? (
-                      <a
-                        href={`/user/${memberUserIdBySteamid64.get(String(m.steamid64))}`}
-                        style={{ color: "#9defff", textDecoration: "underline" }}
+              .map((m, index) => {
+                const place = index + 1;
+                const medal = place === 1 ? "🥇" : place === 2 ? "🥈" : place === 3 ? "🥉" : "•";
+                const progressPercent =
+                  compare.total > 0 ? Math.min(100, Math.round(((m.unlockedCount || 0) / compare.total) * 100)) : 0;
+
+                return (
+                  <li
+                    key={m.steamid64}
+                    style={{
+                      border: place <= 3 ? "1px solid rgba(0, 234, 255, 0.45)" : "1px solid rgba(255, 255, 255, 0.15)",
+                      background:
+                        place <= 3
+                          ? "linear-gradient(135deg, rgba(0, 234, 255, 0.12) 0%, rgba(47, 255, 178, 0.07) 100%)"
+                          : "rgba(8, 18, 33, 0.65)",
+                      borderRadius: 10,
+                      padding: "10px 12px",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 18 }}>{medal}</span>
+                        <span style={{ opacity: 0.85, minWidth: 22 }}>#{place}</span>
+                        <b>
+                          {memberUserIdBySteamid64.get(String(m.steamid64)) ? (
+                            <a
+                              href={`/user/${memberUserIdBySteamid64.get(String(m.steamid64))}`}
+                              style={{ color: "#9defff", textDecoration: "underline" }}
+                            >
+                              {m.displayName}
+                            </a>
+                          ) : (
+                            m.displayName
+                          )}
+                        </b>
+                      </div>
+                      {m.ok ? (
+                        <span style={{ color: "#e8f2ff", fontWeight: 700 }}>
+                          {m.unlockedCount}/{compare.total}
+                        </span>
+                      ) : (
+                        <span style={{ color: "#ff9db0" }}>nicht verfuegbar</span>
+                      )}
+                    </div>
+
+                    {m.ok ? (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          height: 8,
+                          borderRadius: 999,
+                          background: "rgba(255, 255, 255, 0.12)",
+                          overflow: "hidden",
+                        }}
                       >
-                        {m.displayName}
-                      </a>
+                        <div
+                          style={{
+                            width: `${progressPercent}%`,
+                            height: "100%",
+                            borderRadius: 999,
+                            background: "linear-gradient(90deg, #00d9ff, #2fffb2)",
+                          }}
+                        />
+                      </div>
                     ) : (
-                      m.displayName
+                      <div style={{ marginTop: 6, color: "#ff9db0", fontSize: 12 }}>Fehler: {m.error}</div>
                     )}
-                  </b>{" "}
-                  {m.ok ? (
-                    <span>- {m.unlockedCount}/{compare.total}</span>
-                  ) : (
-                    <span style={{ color: "crimson" }}>- nicht verfuegbar ({m.error})</span>
-                  )}
-                </li>
-              ))}
+                  </li>
+                );
+              })}
           </ol>
 
           <h2 style={{ marginTop: 24 }}>Achievements (Mini-Matrix Vorschau)</h2>
@@ -865,7 +914,26 @@ export default function GroupPage() {
                       const ok = compare.matrix?.[a.apiName]?.[m.steamid64];
                       return (
                         <td key={m.steamid64} style={{ padding: 10, borderBottom: "1px solid #eee" }}>
-                          {ok ? "OK" : "-"}
+                          {ok ? (
+                            m.avatarUrl ? (
+                              <img
+                                src={m.avatarUrl}
+                                alt={m.displayName}
+                                title={m.displayName}
+                                width={22}
+                                height={22}
+                                style={{
+                                  borderRadius: "50%",
+                                  objectFit: "cover",
+                                  border: "1px solid rgba(0, 234, 255, 0.45)",
+                                }}
+                              />
+                            ) : (
+                              "OK"
+                            )
+                          ) : (
+                            "-"
+                          )}
                         </td>
                       );
                     })}
