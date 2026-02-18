@@ -1,5 +1,18 @@
 export default function handler(req, res) {
-  const baseUrl = process.env.APP_BASE_URL;
+  const forwardedProto = req.headers["x-forwarded-proto"];
+  const proto =
+    (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto) ||
+    (req.socket?.encrypted ? "https" : "http");
+  const host = req.headers["x-forwarded-host"] || req.headers.host;
+
+  const runtimeBaseUrl = host ? `${proto}://${host}` : null;
+  const configuredBaseUrl = process.env.APP_BASE_URL;
+  const baseUrl = configuredBaseUrl || runtimeBaseUrl;
+
+  if (!baseUrl) {
+    return res.status(500).json({ error: "Missing APP_BASE_URL and request host" });
+  }
+
   const returnTo = `${baseUrl}/api/auth/steam/callback`;
   const realm = baseUrl;
 
