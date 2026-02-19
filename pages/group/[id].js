@@ -123,6 +123,9 @@ export default function GroupPage() {
   const [deletingGroup, setDeletingGroup] = useState(false);
   const [groupDescriptionDraft, setGroupDescriptionDraft] = useState("");
   const [savingGroupDescription, setSavingGroupDescription] = useState(false);
+  const [syncingAvatarXp, setSyncingAvatarXp] = useState(false);
+  const [avatarSyncMsg, setAvatarSyncMsg] = useState("");
+  const [creatingBattleForUserId, setCreatingBattleForUserId] = useState(null);
   const [activityFeed, setActivityFeed] = useState([]);
   const [loadingActivityFeed, setLoadingActivityFeed] = useState(false);
   const [activityFeedError, setActivityFeedError] = useState("");
@@ -524,6 +527,62 @@ export default function GroupPage() {
     }
   }
 
+  async function syncAvatarXpForCurrentGame() {
+    if (!appid || syncingAvatarXp) return;
+    setErr("");
+    setAvatarSyncMsg("");
+    setSyncingAvatarXp(true);
+    try {
+      const selectedGame = ownerGamesByAppid.get(String(appid));
+      const r = await fetch("/api/avatar/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          appid: Number(appid),
+          gameTitle: selectedGame?.name || null,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "Avatar XP Sync fehlgeschlagen");
+        return;
+      }
+      setAvatarSyncMsg(
+        `Avatar Sync ok: +${j?.syncedGame?.gameXp || 0} XP aus App ${j?.syncedGame?.appid || appid}, Level ${j?.avatar?.level || 1}.`
+      );
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setSyncingAvatarXp(false);
+    }
+  }
+
+  async function createBattleWithMember(opponentUserId) {
+    if (!id || !opponentUserId || creatingBattleForUserId) return;
+    setErr("");
+    setCreatingBattleForUserId(opponentUserId);
+    try {
+      const r = await fetch("/api/battles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groupId: id,
+          opponentUserId: Number(opponentUserId),
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "Battle konnte nicht gestartet werden");
+        return;
+      }
+      window.location.href = `/battle/${j.battleId}`;
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setCreatingBattleForUserId(null);
+    }
+  }
+
   const isOwner = !!me && !!group && String(me.id) === String(group.owner_user_id);
   const ownerSteamid64 = useMemo(
     () => members.find((m) => m.role === "owner")?.users?.steamid64 || "",
@@ -705,27 +764,39 @@ export default function GroupPage() {
         {members.map((m) => (
           <li
             key={m.users?.steamid64 || `${m.role}-${m.joined_at}`}
-            style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}
+            style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, justifyContent: "space-between" }}
           >
-            {m.users?.avatar_url && (
-              <img
-                src={m.users.avatar_url}
-                alt=""
-                width={32}
-                height={32}
-                style={{ borderRadius: "50%" }}
-              />
-            )}
-            <span>
-              {memberUserHref(m.users?.id) ? (
-                <a href={memberUserHref(m.users?.id)} style={{ color: "#9defff", textDecoration: "underline" }}>
-                  {m.users?.display_name || m.users?.steamid64 || "Unbekannter User"}
-                </a>
-              ) : (
-                <>{m.users?.display_name || m.users?.steamid64 || "Unbekannter User"}</>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {m.users?.avatar_url && (
+                <img
+                  src={m.users.avatar_url}
+                  alt=""
+                  width={32}
+                  height={32}
+                  style={{ borderRadius: "50%" }}
+                />
               )}
-              {m.role ? ` (${m.role})` : ""}
-            </span>
+              <span>
+                {memberUserHref(m.users?.id) ? (
+                  <a href={memberUserHref(m.users?.id)} style={{ color: "#9defff", textDecoration: "underline" }}>
+                    {m.users?.display_name || m.users?.steamid64 || "Unbekannter User"}
+                  </a>
+                ) : (
+                  <>{m.users?.display_name || m.users?.steamid64 || "Unbekannter User"}</>
+                )}
+                {m.role ? ` (${m.role})` : ""}
+              </span>
+            </div>
+            {String(m.users?.id || "") !== String(me?.id || "") ? (
+              <button
+                type="button"
+                onClick={() => createBattleWithMember(m.users?.id)}
+                disabled={creatingBattleForUserId !== null}
+                style={{ ...groupUi.buttonSecondary, padding: "6px 9px", fontSize: 12 }}
+              >
+                {creatingBattleForUserId === m.users?.id ? "Starte..." : "Duell"}
+              </button>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -818,7 +889,18 @@ export default function GroupPage() {
         >
           Rangliste anlegen
         </button>
+        <button
+          type="button"
+          onClick={syncAvatarXpForCurrentGame}
+          disabled={!appid || syncingAvatarXp}
+          style={{ ...groupUi.buttonSecondary, padding: "10px 14px" }}
+        >
+          {syncingAvatarXp ? "Sync laeuft..." : "Avatar XP syncen"}
+        </button>
       </div>
+      {avatarSyncMsg ? (
+        <p style={{ marginTop: 8, color: "#9defff", fontSize: 13 }}>{avatarSyncMsg}</p>
+      ) : null}
 
       {showCreateLeaderboardOptions ? (
         <div

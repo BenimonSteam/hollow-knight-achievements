@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-label="Battle Arena">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#071224"/>
+      <stop offset="55%" stop-color="#0f2042"/>
+      <stop offset="100%" stop-color="#170f34"/>
+    </linearGradient>
+    <radialGradient id="glowL" cx="0.25" cy="0.7" r="0.38">
+      <stop offset="0%" stop-color="#00d9ff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#00d9ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowR" cx="0.75" cy="0.7" r="0.38">
+      <stop offset="0%" stop-color="#ff9d66" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#ff9d66" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M 32 0 L 0 0 0 32" fill="none" stroke="#a8d9ff" stroke-opacity="0.1" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <rect width="1600" height="900" fill="url(#grid)"/>
+  <rect width="1600" height="900" fill="url(#glowL)"/>
+  <rect width="1600" height="900" fill="url(#glowR)"/>
+  <ellipse cx="480" cy="700" rx="340" ry="120" fill="#0be1ff" fill-opacity="0.22"/>
+  <ellipse cx="1120" cy="700" rx="340" ry="120" fill="#ffab79" fill-opacity="0.2"/>
+  <path d="M0 760 Q800 620 1600 760 L1600 900 L0 900 Z" fill="#040b16" fill-opacity="0.65"/>
+</svg>
