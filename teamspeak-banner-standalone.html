@@ -1,0 +1,176 @@
+﻿<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TrophyTracker | TeamSpeak Inspired Landing</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        --bg-0: #040611;
+        --bg-1: #0a1630;
+        --bg-2: #11122c;
+        --line-soft: rgba(255, 255, 255, 0.14);
+        --text: #edf4ff;
+        --muted: #93a8c8;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        color: var(--text);
+        font-family: "Rajdhani", "Segoe UI", sans-serif;
+        background:
+          radial-gradient(1200px 520px at 85% -10%, rgba(74, 95, 255, 0.28), transparent 58%),
+          radial-gradient(980px 500px at 12% -12%, rgba(0, 223, 255, 0.2), transparent 55%),
+          linear-gradient(165deg, var(--bg-0) 0%, var(--bg-1) 42%, var(--bg-2) 100%);
+      }
+
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        border-bottom: 1px solid var(--line-soft);
+        background: rgba(4, 10, 24, 0.75);
+        backdrop-filter: blur(10px);
+      }
+
+      .nav-inner,
+      .hero,
+      .footer {
+        width: min(1280px, 94vw);
+        margin: 0 auto;
+      }
+
+      .nav-inner {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 0;
+        gap: 14px;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        font-family: "Orbitron", sans-serif;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+      }
+
+      .brand img {
+        width: 30px;
+        height: 30px;
+        object-fit: contain;
+      }
+
+      .nav-links {
+        display: flex;
+        gap: 18px;
+        align-items: center;
+      }
+
+      .nav a {
+        text-decoration: none;
+        color: var(--muted);
+        font-size: 1.05rem;
+      }
+
+      .download-btn {
+        color: #dff6ff;
+        border: 1px solid rgba(36, 216, 255, 0.55);
+        background: linear-gradient(135deg, rgba(36, 216, 255, 0.2), rgba(47, 255, 170, 0.15));
+        padding: 8px 14px;
+        border-radius: 999px;
+        font-weight: 700;
+      }
+
+      .hero {
+        padding: 48px 0 20px;
+        text-align: center;
+      }
+
+      .kicker {
+        display: inline-block;
+        color: #8ceaff;
+        border: 1px solid rgba(140, 234, 255, 0.44);
+        border-radius: 999px;
+        padding: 5px 12px;
+        font-size: 0.86rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+      }
+
+      h1 {
+        margin: 14px auto 10px;
+        font-family: "Orbitron", sans-serif;
+        font-size: clamp(2rem, 5vw, 3.6rem);
+        line-height: 1.08;
+        max-width: 22ch;
+      }
+
+      .sub {
+        margin: 0 auto 24px;
+        color: var(--muted);
+        font-size: clamp(1.05rem, 2.5vw, 1.28rem);
+        max-width: 62ch;
+      }
+
+      .banner-wrap {
+        width: min(1260px, 98vw);
+        margin: 0 auto;
+      }
+
+      .hero-banner {
+        width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      .footer {
+        padding: 22px 0 36px;
+        color: #7f95b4;
+        font-size: 0.95rem;
+        text-align: center;
+      }
+
+      @media (max-width: 900px) {
+        .nav-links a:not(.download-btn) { display: none; }
+        .hero { padding-top: 34px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="nav">
+      <div class="nav-inner">
+        <div class="brand">
+          <img src="test1.png" alt="TrophyTracker" />
+          <span>TROPHYTRACKER</span>
+        </div>
+        <nav class="nav-links">
+          <a href="#">Features</a>
+          <a href="#">Community</a>
+          <a class="download-btn" href="#">Join Crew</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <span class="kicker">TEAMSPEAK-INSPIRIERTES LAYOUT</span>
+        <h1>Voice-first Achievement Hub fuer deine Gaming Gruppe</h1>
+        <p class="sub">Zentrale Hero-Grafik mit maximalem Fokus auf das Banner, ohne Tabellen oder Kartenbereiche.</p>
+        <div class="banner-wrap">
+          <img class="hero-banner" src="test1.png" alt="TrophyTracker Gruppenansicht Banner" />
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">Standalone demo page. Keine Abhaengigkeit zum Next.js Hauptprojekt.</footer>
+  </body>
+</html>
+

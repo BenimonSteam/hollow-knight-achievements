@@ -7,6 +7,38 @@ export default async function handler(req, res) {
 
   const groupId = req.query.id;
 
+  if (req.method === "PATCH") {
+    const { data: group, error: groupError } = await supabaseAdmin
+      .from("groups")
+      .select("id, owner_user_id")
+      .eq("id", groupId)
+      .single();
+
+    if (groupError || !group) return res.status(404).json({ error: "Group not found" });
+    if (String(group.owner_user_id) !== String(user.id)) {
+      return res.status(403).json({ error: "Only owner can edit group" });
+    }
+
+    const rawDescription = String(req.body?.description || "").trim();
+    if (rawDescription.length > 500) {
+      return res.status(400).json({ error: "Description too long (max 500 chars)" });
+    }
+
+    const description = rawDescription || null;
+    const { data: updatedGroup, error: updateError } = await supabaseAdmin
+      .from("groups")
+      .update({ description })
+      .eq("id", groupId)
+      .select("id,name,description,owner_user_id,invite_code,active_appid,created_at")
+      .single();
+
+    if (updateError) {
+      return res.status(500).json({ error: String(updateError.message || updateError) });
+    }
+
+    return res.status(200).json({ group: updatedGroup });
+  }
+
   if (req.method === "DELETE") {
     const { data: group, error: groupError } = await supabaseAdmin
       .from("groups")
@@ -42,7 +74,7 @@ export default async function handler(req, res) {
 
   const { data: group } = await supabaseAdmin
     .from("groups")
-    .select("id,name,owner_user_id,invite_code,active_appid,created_at")
+    .select("id,name,description,owner_user_id,invite_code,active_appid,created_at")
     .eq("id", groupId)
     .single();
 

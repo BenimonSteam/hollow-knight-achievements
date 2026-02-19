@@ -1,11 +1,5 @@
 ﻿import { useRouter } from "next/router";
-import { useEffect, useMemo, useState } from "react";
-
-const MODE_LABELS = {
-  overall_progress: "Overall achievement progress",
-  rarest_10: "Die 10 seltensten Achievements",
-  custom: "Custom Auswahl",
-};
+import { useEffect, useState } from "react";
 
 function formatDate(value) {
   if (!value) return "-";
@@ -14,14 +8,44 @@ function formatDate(value) {
   return date.toLocaleString("de-DE");
 }
 
-export default function UserProfilePage() {
+function dailyQuestTimeLeftLabel(nowMs) {
+  const now = new Date(nowMs);
+  const nextUtcMidnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() + 1,
+    0,
+    0,
+    0,
+    0
+  );
+
+  let diff = Math.max(0, nextUtcMidnight - nowMs);
+  const hours = Math.floor(diff / 3600000);
+  diff -= hours * 3600000;
+  const minutes = Math.floor(diff / 60000);
+  diff -= minutes * 60000;
+  const seconds = Math.floor(diff / 1000);
+
+  const hh = String(hours).padStart(2, "0");
+  const mm = String(minutes).padStart(2, "0");
+  const ss = String(seconds).padStart(2, "0");
+  return `${hh}:${mm}:${ss}`;
+}
+
+export default function UserProfilePage({ appUser }) {
   const router = useRouter();
   const { id } = router.query;
+  const me = appUser || null;
 
   const [profile, setProfile] = useState(null);
-  const [userGames, setUserGames] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  const [dailyQuest, setDailyQuest] = useState(null);
+  const [dailyBusy, setDailyBusy] = useState(false);
+  const [dailyErr, setDailyErr] = useState("");
+  const [selectedDailyOptionKey, setSelectedDailyOptionKey] = useState("");
+  const [dailyNowMs, setDailyNowMs] = useState(Date.now());
 
   useEffect(() => {
     if (!id) return;
@@ -47,49 +71,93 @@ export default function UserProfilePage() {
     })();
   }, [id]);
 
+  const memberships = profile?.memberships || [];
+
+  const isOwnProfile = !!me && !!profile?.user && String(me.id) === String(profile.user.id);
+
+  async function loadDailyQuest() {
+    setDailyBusy(true);
+    setDailyErr("");
+    try {
+      const r = await fetch("/api/daily-quest");
+      const j = await r.json();
+      if (!r.ok) {
+        setDailyQuest(null);
+        setDailyErr(j.error || "Daily Quest konnte nicht geladen werden.");
+        return;
+      }
+      setDailyQuest(j.quest || null);
+    } catch (e) {
+      setDailyQuest(null);
+      setDailyErr(String(e));
+    } finally {
+      setDailyBusy(false);
+    }
+  }
+
+  async function triggerDailyQuest(action) {
+    setDailyBusy(true);
+    setDailyErr("");
+    try {
+      const r = await fetch("/api/daily-quest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setDailyErr(j.error || "Daily Quest konnte nicht erstellt werden.");
+        return;
+      }
+      setDailyQuest(j.quest || null);
+      setSelectedDailyOptionKey("");
+    } catch (e) {
+      setDailyErr(String(e));
+    } finally {
+      setDailyBusy(false);
+    }
+  }
+
+  async function confirmDailyQuestSelection() {
+    if (!selectedDailyOptionKey) return;
+    setDailyBusy(true);
+    setDailyErr("");
+    try {
+      const r = await fetch("/api/daily-quest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "select", selectedQuestKey: selectedDailyOptionKey }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setDailyErr(j.error || "Auswahl konnte nicht bestaetigt werden.");
+        return;
+      }
+      setDailyQuest(j.quest || null);
+      setSelectedDailyOptionKey("");
+    } catch (e) {
+      setDailyErr(String(e));
+    } finally {
+      setDailyBusy(false);
+    }
+  }
+
   useEffect(() => {
-    const steamid = profile?.user?.steamid64;
-    if (!steamid) {
-      setUserGames([]);
+    if (!isOwnProfile) {
+      setDailyQuest(null);
+      setDailyErr("");
       return;
     }
-
-    let cancelled = false;
     (async () => {
-      try {
-        const r = await fetch(`/api/steam/games?steamid=${encodeURIComponent(steamid)}`);
-        const j = await r.json();
-        if (!r.ok || cancelled) return;
-        setUserGames(j.games || []);
-      } catch {
-        if (!cancelled) setUserGames([]);
-      }
+      await loadDailyQuest();
     })();
+  }, [isOwnProfile]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [profile?.user?.steamid64]);
-
-  const memberships = profile?.memberships || [];
-  const leaderboards = profile?.leaderboards || [];
-
-  const groupNameById = useMemo(() => {
-    const map = new Map();
-    for (const membership of memberships) {
-      const groupId = membership?.groups?.id;
-      const groupName = membership?.groups?.name;
-      if (!groupId) continue;
-      map.set(String(groupId), groupName || `Gruppe ${groupId}`);
-    }
-    return map;
-  }, [memberships]);
-
-  const userGamesByAppid = useMemo(() => {
-    const map = new Map();
-    for (const g of userGames) map.set(String(g.appid), g);
-    return map;
-  }, [userGames]);
+  useEffect(() => {
+    if (!isOwnProfile) return;
+    const t = setInterval(() => setDailyNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [isOwnProfile]);
 
   if (!id || loading) {
     return <div style={{ padding: 40, fontFamily: "system-ui" }}>Loading...</div>;
@@ -121,6 +189,112 @@ export default function UserProfilePage() {
         </div>
       ) : null}
 
+      {isOwnProfile ? (
+        <section style={{ marginTop: 20, border: "1px solid #ddd", borderRadius: 12, padding: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <h2 style={{ margin: 0 }}>Daily Quest</h2>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => triggerDailyQuest("ensure")}
+                disabled={dailyBusy}
+                style={{ padding: "8px 12px" }}
+              >
+                {dailyBusy ? "Lade..." : dailyQuest ? "Quest neu laden" : "Daily Quest holen"}
+              </button>
+              <button
+                type="button"
+                onClick={() => triggerDailyQuest("reroll")}
+                disabled={dailyBusy || !dailyQuest || !!dailyQuest.selected}
+                style={{ padding: "8px 12px" }}
+              >
+                Neu wuerfeln
+              </button>
+            </div>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
+            Reset in: <b>{dailyQuestTimeLeftLabel(dailyNowMs)}</b> (00:00 UTC)
+          </div>
+
+          {dailyErr ? <p style={{ color: "crimson", marginTop: 8 }}>{dailyErr}</p> : null}
+
+          {!dailyQuest ? (
+            <p style={{ marginTop: 8, opacity: 0.85 }}>Noch keine Quest fuer heute.</p>
+          ) : !dailyQuest.selected ? (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ marginBottom: 8, fontSize: 13, opacity: 0.9 }}>
+                Waehle 1 Achievement aus 3 Vorschlaegen und bestaetige die Daily Quest.
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {(dailyQuest.options || []).map((option) => {
+                  const selected = String(selectedDailyOptionKey) === String(option.questKey);
+                  return (
+                    <button
+                      key={option.questKey}
+                      type="button"
+                      onClick={() => setSelectedDailyOptionKey(option.questKey)}
+                      disabled={dailyBusy}
+                      style={{
+                        border: selected ? "1px solid rgba(0, 234, 255, 0.65)" : "1px solid rgba(255, 255, 255, 0.2)",
+                        borderRadius: 10,
+                        background: selected
+                          ? "linear-gradient(135deg, rgba(0, 234, 255, 0.14) 0%, rgba(47, 255, 178, 0.08) 100%)"
+                          : "rgba(255, 255, 255, 0.02)",
+                        color: "inherit",
+                        textAlign: "left",
+                        padding: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                      }}
+                    >
+                      {option.achievementIcon ? (
+                        <img src={option.achievementIcon} alt={option.achievementDisplayName} width={34} height={34} style={{ borderRadius: 6 }} />
+                      ) : null}
+                      <div>
+                        <div style={{ fontWeight: 700 }}>{option.achievementDisplayName}</div>
+                        <div style={{ fontSize: 12, opacity: 0.82 }}>
+                          {option.gameTitle} (AppID: {option.appid})
+                        </div>
+                        <div style={{ fontSize: 12, opacity: 0.75 }}>
+                          {option.achievementDescription || "Keine Beschreibung"}
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  onClick={confirmDailyQuestSelection}
+                  disabled={dailyBusy || !selectedDailyOptionKey}
+                  style={{ padding: "8px 12px" }}
+                >
+                  Auswahl bestaetigen
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10 }}>
+              {dailyQuest.achievementIcon ? (
+                <img src={dailyQuest.achievementIcon} alt={dailyQuest.achievementDisplayName} width={36} height={36} style={{ borderRadius: 6 }} />
+              ) : null}
+              <div>
+                <div style={{ fontWeight: 700 }}>{dailyQuest.achievementDisplayName}</div>
+                <div style={{ fontSize: 13, opacity: 0.85 }}>{dailyQuest.gameTitle} (AppID: {dailyQuest.appid})</div>
+                <div style={{ fontSize: 12, opacity: 0.75 }}>
+                  {dailyQuest.achievementDescription || "Keine Beschreibung"} | Rerolls heute: {dailyQuest.rerollCount || 0}
+                </div>
+                <div style={{ fontSize: 12, marginTop: 2, color: dailyQuest.done ? "#6ef7a2" : "#ffd38a" }}>
+                  Status: {dailyQuest.done ? "Bereits abgeschlossen" : "Offen"}
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      ) : null}
+
       <h2 style={{ marginTop: 28 }}>Beigetretene Gruppen</h2>
       {memberships.length === 0 ? (
         <p style={{ opacity: 0.8 }}>Dieser Nutzer ist aktuell in keiner Gruppe.</p>
@@ -144,67 +318,8 @@ export default function UserProfilePage() {
           })}
         </ul>
       )}
-
-      <h2 style={{ marginTop: 28 }}>Ranglisten in diesen Gruppen</h2>
-      {leaderboards.length === 0 ? (
-        <p style={{ opacity: 0.8 }}>Keine Ranglisten in den beigetretenen Gruppen gefunden.</p>
-      ) : (
-        <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 10 }}>
-          {leaderboards.map((lb) => {
-            const groupId = lb.group_id;
-            const groupName = lb?.groups?.name || groupNameById.get(String(groupId)) || `Gruppe ${groupId}`;
-            const game = userGamesByAppid.get(String(lb.appid));
-            return (
-              <li key={lb.id || `${groupId}-${lb.appid}`} style={{ border: "1px solid #ddd", borderRadius: 10, padding: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  {game?.libraryCapsuleUrl || game?.iconUrl ? (
-                    <img
-                      src={game.libraryCapsuleUrl || game.iconUrl}
-                      alt={lb.title || `App ${lb.appid}`}
-                      width={64}
-                      height={96}
-                      style={{ borderRadius: 8, objectFit: "cover", background: "#f2f2f2" }}
-                    />
-                  ) : (
-                    <div
-                      style={{
-                        width: 64,
-                        height: 96,
-                        borderRadius: 8,
-                        background: "#eee",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 10,
-                        color: "#666",
-                      }}
-                    >
-                      No Cover
-                    </div>
-                  )}
-
-                  <div>
-                    <div style={{ fontWeight: 700 }}>{lb.title || `App ${lb.appid}`}</div>
-                    <div style={{ marginTop: 4, fontSize: 13, opacity: 0.85 }}>
-                      Gruppe:{" "}
-                      <a href={`/group/${groupId}`} style={{ color: "#9defff", textDecoration: "underline" }}>
-                        {groupName}
-                      </a>
-                    </div>
-                    <div style={{ marginTop: 2, fontSize: 13, opacity: 0.85 }}>
-                      AppID: {lb.appid} | Typ: {MODE_LABELS[lb.mode] || MODE_LABELS.overall_progress}
-                    </div>
-                    <div style={{ marginTop: 2, fontSize: 12, opacity: 0.75 }}>
-                      Erstellt: {formatDate(lb.created_at)}
-                    </div>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
     </div>
   );
 }
+
 

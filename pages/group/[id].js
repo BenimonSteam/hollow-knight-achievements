@@ -42,6 +42,60 @@ function formatFeedTime(isoTimestamp) {
   });
 }
 
+const groupUi = {
+  field: {
+    width: "100%",
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: "1px solid rgba(0, 234, 255, 0.3)",
+    background: "rgba(7, 19, 33, 0.88)",
+    color: "#e8f2ff",
+    fontFamily: "inherit",
+  },
+  buttonPrimary: {
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid rgba(82, 166, 255, 0.5)",
+    background: "linear-gradient(135deg, rgba(47, 140, 255, 0.36), rgba(0, 234, 255, 0.24))",
+    color: "#dff3ff",
+    fontWeight: 700,
+  },
+  buttonSecondary: {
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid rgba(0, 234, 255, 0.35)",
+    background: "rgba(0, 234, 255, 0.08)",
+    color: "#9defff",
+    fontWeight: 700,
+  },
+  buttonDanger: {
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid rgba(255, 123, 0, 0.45)",
+    background: "rgba(255, 123, 0, 0.16)",
+    color: "#ffd6b6",
+    fontWeight: 700,
+  },
+  dropdownSurface: {
+    border: "1px solid rgba(0, 234, 255, 0.3)",
+    borderRadius: 10,
+    background: "rgba(7, 18, 33, 0.96)",
+    boxShadow: "0 14px 30px rgba(0, 0, 0, 0.35)",
+  },
+  menuItem: {
+    padding: "8px 10px",
+    textAlign: "left",
+    border: "1px solid rgba(255, 255, 255, 0.14)",
+    borderRadius: 6,
+    background: "rgba(255, 255, 255, 0.03)",
+    color: "#e8f2ff",
+  },
+  menuItemActive: {
+    background: "rgba(0, 234, 255, 0.16)",
+    border: "1px solid rgba(0, 234, 255, 0.4)",
+  },
+};
+
 export default function GroupPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -67,6 +121,8 @@ export default function GroupPage() {
   const [loadingAvailableAchievements, setLoadingAvailableAchievements] = useState(false);
   const [creatingLeaderboard, setCreatingLeaderboard] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
+  const [groupDescriptionDraft, setGroupDescriptionDraft] = useState("");
+  const [savingGroupDescription, setSavingGroupDescription] = useState(false);
   const [activityFeed, setActivityFeed] = useState([]);
   const [loadingActivityFeed, setLoadingActivityFeed] = useState(false);
   const [activityFeedError, setActivityFeedError] = useState("");
@@ -145,6 +201,7 @@ export default function GroupPage() {
     }
 
     setGroup(j.group);
+    setGroupDescriptionDraft(String(j.group?.description || ""));
     const nextMembers = j.members || [];
     setMembers(nextMembers);
     setLeaderboards(j.leaderboards || []);
@@ -443,6 +500,30 @@ export default function GroupPage() {
     }
   }
 
+  async function saveGroupDescription() {
+    if (!group?.id || savingGroupDescription) return;
+    setErr("");
+    setSavingGroupDescription(true);
+    try {
+      const r = await fetch(`/api/groups/${group.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: groupDescriptionDraft }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        setErr(j.error || "Beschreibung konnte nicht gespeichert werden");
+        return;
+      }
+      setGroup((prev) => ({ ...(prev || {}), ...(j.group || {}) }));
+      setGroupDescriptionDraft(String(j.group?.description || ""));
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setSavingGroupDescription(false);
+    }
+  }
+
   const isOwner = !!me && !!group && String(me.id) === String(group.owner_user_id);
   const ownerSteamid64 = useMemo(
     () => members.find((m) => m.role === "owner")?.users?.steamid64 || "",
@@ -557,9 +638,46 @@ export default function GroupPage() {
       >
         <div>
       {group && (
-        <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 16, marginTop: 0, width: "100%", maxWidth: 500 }}>
+        <div style={{ border: "1px solid rgba(255, 255, 255, 0.2)", borderRadius: 12, padding: 16, marginTop: 0, width: "100%", maxWidth: 500 }}>
           <div>
             <b>Invite Code:</b> {group.invite_code}
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <b>Beschreibung:</b>
+            {isOwner ? (
+              <div style={{ marginTop: 6 }}>
+                <textarea
+                  value={groupDescriptionDraft}
+                  onChange={(e) => setGroupDescriptionDraft(e.target.value)}
+                  placeholder="Beschreibung der Gruppe (optional)"
+                  maxLength={500}
+                  rows={4}
+                  style={{
+                    ...groupUi.field,
+                    resize: "vertical",
+                    minHeight: 84,
+                  }}
+                />
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={saveGroupDescription}
+                    disabled={savingGroupDescription}
+                    style={{
+                      ...groupUi.buttonPrimary,
+                      cursor: savingGroupDescription ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    {savingGroupDescription ? "Speichere..." : "Beschreibung speichern"}
+                  </button>
+                  <span style={{ fontSize: 12, opacity: 0.75 }}>{groupDescriptionDraft.length}/500</span>
+                </div>
+              </div>
+            ) : group.description ? (
+              <div style={{ marginTop: 4, whiteSpace: "pre-wrap", opacity: 0.9 }}>{group.description}</div>
+            ) : (
+              <div style={{ marginTop: 4, opacity: 0.7 }}>Keine Beschreibung hinterlegt.</div>
+            )}
           </div>
           <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
             Tipp: Teile den Code. Andere gehen auf Home und dann auf Join Group.
@@ -570,12 +688,9 @@ export default function GroupPage() {
                 onClick={deleteGroup}
                 disabled={deletingGroup}
                 style={{
-                  padding: "8px 12px",
-                  border: "1px solid #c82b2b",
-                  background: deletingGroup ? "#f8dede" : "#fff0f0",
-                  color: "#8a1212",
-                  borderRadius: 8,
+                  ...groupUi.buttonDanger,
                   cursor: deletingGroup ? "not-allowed" : "pointer",
+                  opacity: deletingGroup ? 0.7 : 1,
                 }}
               >
                 {deletingGroup ? "Loesche Gruppe..." : "Gruppe loeschen"}
@@ -630,9 +745,10 @@ export default function GroupPage() {
               padding: "10px 12px",
               minWidth: 320,
               textAlign: "left",
-              border: "1px solid #cfd6e1",
-              borderRadius: 8,
-              background: "#fff",
+              border: groupUi.field.border,
+              borderRadius: groupUi.field.borderRadius,
+              background: groupUi.field.background,
+              color: groupUi.field.color,
             }}
           >
             {loadingOwnerGames
@@ -652,10 +768,7 @@ export default function GroupPage() {
                 left: 0,
                 width: "100%",
                 zIndex: 60,
-                border: "1px solid #cfd6e1",
-                borderRadius: 8,
-                background: "#fff",
-                boxShadow: "0 10px 24px rgba(0, 0, 0, 0.15)",
+                ...groupUi.dropdownSurface,
                 padding: 8,
               }}
             >
@@ -665,7 +778,7 @@ export default function GroupPage() {
                 onChange={(e) => setGameSearch(e.target.value)}
                 placeholder="Spiel suchen (Name oder AppID)"
                 autoFocus
-                style={{ width: "100%", padding: 8, marginBottom: 8 }}
+                style={{ ...groupUi.field, padding: 8, marginBottom: 8 }}
               />
               <div style={{ maxHeight: 260, overflowY: "auto", display: "grid", gap: 4 }}>
                 {filteredOwnerGames.length === 0 ? (
@@ -680,13 +793,11 @@ export default function GroupPage() {
                         setIsGameDropdownOpen(false);
                         setGameSearch("");
                       }}
-                      style={{
-                        padding: "8px 10px",
-                        textAlign: "left",
-                        border: "1px solid #edf1f6",
-                        borderRadius: 6,
-                        background: String(g.appid) === String(appid) ? "#edf7ff" : "#fff",
-                      }}
+                      style={
+                        String(g.appid) === String(appid)
+                          ? { ...groupUi.menuItem, ...groupUi.menuItemActive }
+                          : groupUi.menuItem
+                      }
                     >
                       {g.name} (AppID: {g.appid})
                     </button>
@@ -703,7 +814,7 @@ export default function GroupPage() {
             setShowCreateLeaderboardOptions(true);
           }}
           disabled={!appid || !isOwner}
-          style={{ padding: "10px 14px" }}
+          style={{ ...groupUi.buttonPrimary, padding: "10px 14px" }}
         >
           Rangliste anlegen
         </button>
@@ -754,10 +865,7 @@ export default function GroupPage() {
                 onClick={() => setShowCreateLeaderboardOptions(false)}
                 disabled={creatingLeaderboard}
                 style={{
-                  padding: "8px 12px",
-                  color: "#00eaff",
-                  background: "rgba(0, 234, 255, 0.08)",
-                  border: "1px solid rgba(0, 234, 255, 0.35)",
+                  ...groupUi.buttonSecondary,
                   borderRadius: 10,
                 }}
               >
@@ -931,12 +1039,10 @@ export default function GroupPage() {
                   (createLeaderboardMode === "custom" && selectedCustomAchievements.length === 0)
                 }
                 style={{
+                  ...groupUi.buttonPrimary,
                   padding: "10px 14px",
-                  color: "#04131d",
                   background: "linear-gradient(90deg, #00d9ff, #2fffb2)",
-                  border: "1px solid transparent",
                   borderRadius: 10,
-                  fontWeight: 700,
                 }}
               >
                 {creatingLeaderboard ? "Erstelle..." : "Rangliste erstellen"}
@@ -945,12 +1051,9 @@ export default function GroupPage() {
                 onClick={() => setShowCreateLeaderboardOptions(false)}
                 disabled={creatingLeaderboard}
                 style={{
+                  ...groupUi.buttonSecondary,
                   padding: "10px 14px",
-                  color: "#00eaff",
-                  background: "rgba(0, 234, 255, 0.08)",
-                  border: "1px solid rgba(0, 234, 255, 0.35)",
                   borderRadius: 10,
-                  fontWeight: 700,
                 }}
               >
                 Abbrechen
@@ -1066,11 +1169,8 @@ export default function GroupPage() {
                         }}
                         disabled={!isOwner}
                         style={{
+                          ...groupUi.buttonDanger,
                           padding: "6px 10px",
-                          color: "#ffd6b6",
-                          background: "rgba(255, 123, 0, 0.16)",
-                          border: "1px solid rgba(255, 123, 0, 0.45)",
-                          borderRadius: 8,
                         }}
                       >
                         Loeschen
@@ -1150,9 +1250,9 @@ export default function GroupPage() {
                             style={{
                               padding: "4px 8px",
                               borderRadius: 8,
-                              border: "1px solid rgba(157, 239, 255, 0.45)",
-                              background: "rgba(157, 239, 255, 0.08)",
-                              color: "#9defff",
+                              border: groupUi.buttonSecondary.border,
+                              background: groupUi.buttonSecondary.background,
+                              color: groupUi.buttonSecondary.color,
                               fontSize: 12,
                             }}
                           >
@@ -1219,11 +1319,8 @@ export default function GroupPage() {
                                   style={{
                                     flex: 1,
                                     minWidth: 0,
+                                    ...groupUi.field,
                                     padding: "6px 8px",
-                                    borderRadius: 8,
-                                    border: "1px solid rgba(255, 255, 255, 0.22)",
-                                    background: "rgba(255, 255, 255, 0.04)",
-                                    color: "#e8f2ff",
                                   }}
                                 />
                                 <button
@@ -1231,11 +1328,8 @@ export default function GroupPage() {
                                   onClick={() => submitCommentForEvent(eventId)}
                                   disabled={isCommentBusy || !commentDraft.trim()}
                                   style={{
+                                    ...groupUi.buttonSecondary,
                                     padding: "6px 8px",
-                                    borderRadius: 8,
-                                    border: "1px solid rgba(0, 234, 255, 0.35)",
-                                    background: "rgba(0, 234, 255, 0.08)",
-                                    color: "#00eaff",
                                   }}
                                 >
                                   Senden
@@ -1357,7 +1451,7 @@ export default function GroupPage() {
               type="button"
               onClick={() => setMatrixPage((prev) => Math.max(1, prev - 1))}
               disabled={matrixCurrentPage <= 1}
-              style={{ padding: "6px 10px" }}
+              style={{ ...groupUi.buttonSecondary, padding: "6px 10px" }}
             >
               Zurueck
             </button>
@@ -1368,7 +1462,7 @@ export default function GroupPage() {
               type="button"
               onClick={() => setMatrixPage((prev) => Math.min(matrixTotalPages, prev + 1))}
               disabled={matrixCurrentPage >= matrixTotalPages}
-              style={{ padding: "6px 10px" }}
+              style={{ ...groupUi.buttonSecondary, padding: "6px 10px" }}
             >
               Weiter
             </button>

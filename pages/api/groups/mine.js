@@ -11,7 +11,7 @@ export default async function handler(req, res) {
 
   const { data: memberships, error } = await supabaseAdmin
     .from("group_members")
-    .select("role, joined_at, groups:groups(id,name,invite_code,owner_user_id,active_appid,created_at)")
+    .select("role, joined_at, groups:groups(id,name,description,invite_code,owner_user_id,active_appid,created_at)")
     .eq("user_id", user.id)
     .order("joined_at", { ascending: false });
 
